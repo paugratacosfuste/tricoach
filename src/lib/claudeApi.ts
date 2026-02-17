@@ -17,8 +17,8 @@ import {
 } from '@/types/training';
 
 // Get the API key from environment variables
-const ANTHROPIC_API_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY;
-const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
+// NOTE: The API key is now server-side only via Vercel API route.
+// The client sends prompts to /api/generate-week which proxies to Claude.
 
 // ============================================
 // HISTORY CONTEXT BUILDER
@@ -46,14 +46,14 @@ function buildHistoryContext(completedWeeks: CompletedWeek[]): string {
 
       parts.push(
         `- Week ${week.weekNumber} (${week.phase}): ` +
-          `${week.summary.completedHours.toFixed(1)}h of ${week.summary.plannedHours.toFixed(1)}h ` +
-          `(${week.summary.completionRate}% completion). ` +
-          `Key sessions: ${keyWorkoutsStr}. ` +
-          `Feeling: ${week.summary.feedback.overallFeeling}. ` +
-          (week.summary.feedback.physicalIssues.length > 0
-            ? `Issues: ${week.summary.feedback.physicalIssues.join(', ')}. `
-            : '') +
-          (week.summary.feedback.notes ? `Notes: "${week.summary.feedback.notes}"` : '')
+        `${week.summary.completedHours.toFixed(1)}h of ${week.summary.plannedHours.toFixed(1)}h ` +
+        `(${week.summary.completionRate}% completion). ` +
+        `Key sessions: ${keyWorkoutsStr}. ` +
+        `Feeling: ${week.summary.feedback.overallFeeling}. ` +
+        (week.summary.feedback.physicalIssues.length > 0
+          ? `Issues: ${week.summary.feedback.physicalIssues.join(', ')}. `
+          : '') +
+        (week.summary.feedback.notes ? `Notes: "${week.summary.feedback.notes}"` : '')
       );
     });
   }
@@ -413,10 +413,6 @@ export async function generateWeekPlan(
   completedWeeks: CompletedWeek[],
   nextWeekConstraints?: string
 ): Promise<WeekPlan> {
-  if (!ANTHROPIC_API_KEY) {
-    throw new Error('Anthropic API key not configured. Add VITE_ANTHROPIC_API_KEY to .env.local');
-  }
-
   const prompt = buildWeekPrompt(
     userData,
     weekNumber,
@@ -426,21 +422,14 @@ export async function generateWeekPlan(
   );
 
   console.log(`Generating Week ${weekNumber} of ${totalWeeks}...`);
-  console.log('Prompt length:', prompt.length, 'chars');
 
-  const response = await fetch(ANTHROPIC_API_URL, {
+  // Call the Vercel API proxy instead of Claude directly
+  const response = await fetch('/api/generate-week', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-api-key': ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true',
     },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 8000,
-      messages: [{ role: 'user', content: prompt }],
-    }),
+    body: JSON.stringify({ prompt }),
   });
 
   if (!response.ok) {

@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 import { OnboardingData, UserProfile, FitnessAssessment, RaceGoal, WeeklyAvailability, Integrations } from '@/types/training';
+import { supabase } from '@/lib/supabase';
 
 interface OnboardingContextType {
   data: Partial<OnboardingData>;
@@ -40,15 +41,15 @@ const OnboardingContext = createContext<OnboardingContextType | undefined>(undef
 
 export function OnboardingProvider({ children }: { children: ReactNode }) {
   const [currentStep, setCurrentStep] = useState(1);
-  
+
   const [isComplete, setIsComplete] = useState(() => {
     return localStorage.getItem('onboarding_complete') === 'true';
   });
-  
+
   const [isStarted, setIsStarted] = useState(() => {
     return localStorage.getItem('onboarding_started') === 'true';
   });
-  
+
   const [data, setData] = useState<Partial<OnboardingData>>(() => {
     const saved = localStorage.getItem('onboarding_data');
     if (saved) {
@@ -64,10 +65,59 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     };
   });
 
+  // Check Supabase profile on mount to see if onboarding was already completed
+  useEffect(() => {
+    const checkProfile = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      if (profile?.onboarding_complete) {
+        setIsComplete(true);
+        localStorage.setItem('onboarding_complete', 'true');
+
+        // Load profile data if not already in localStorage
+        if (!localStorage.getItem('onboarding_data') && profile.first_name) {
+          const profileData: Partial<OnboardingData> = {
+            profile: {
+              firstName: profile.first_name || '',
+              age: profile.age || 30,
+              gender: profile.gender || 'male',
+              weight: profile.weight ? Number(profile.weight) : 70,
+              height: profile.height || 175,
+            },
+            fitness: {
+              fitnessLevel: profile.fitness_level || 'intermediate',
+              lthr: profile.lthr || 160,
+              thresholdPace: profile.threshold_pace || '5:30',
+              maxHR: profile.max_hr || 185,
+              ftp: profile.ftp || undefined,
+              swimLevel: profile.swim_level || 'comfortable',
+            },
+            availability: profile.weekly_availability || defaultAvailability,
+            integrations: profile.integrations || defaultIntegrations,
+          };
+          setData(profileData);
+          localStorage.setItem('onboarding_data', JSON.stringify(profileData));
+        }
+      }
+    };
+    checkProfile();
+  }, []);
+
+  const saveToLocalStorage = (updatedData: Partial<OnboardingData>) => {
+    localStorage.setItem('onboarding_data', JSON.stringify(updatedData));
+  };
+
   const updateData = (newData: Partial<OnboardingData>) => {
     setData(prev => {
       const updated = { ...prev, ...newData };
-      localStorage.setItem('onboarding_data', JSON.stringify(updated));
+      saveToLocalStorage(updated);
       return updated;
     });
   };
@@ -75,7 +125,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   const updateProfile = (profile: Partial<UserProfile>) => {
     setData(prev => {
       const updated = { ...prev, profile: { ...prev.profile, ...profile } as UserProfile };
-      localStorage.setItem('onboarding_data', JSON.stringify(updated));
+      saveToLocalStorage(updated);
       return updated;
     });
   };
@@ -83,7 +133,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   const updateFitness = (fitness: Partial<FitnessAssessment>) => {
     setData(prev => {
       const updated = { ...prev, fitness: { ...prev.fitness, ...fitness } as FitnessAssessment };
-      localStorage.setItem('onboarding_data', JSON.stringify(updated));
+      saveToLocalStorage(updated);
       return updated;
     });
   };
@@ -91,7 +141,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   const updateGoal = (goal: Partial<RaceGoal>) => {
     setData(prev => {
       const updated = { ...prev, goal: { ...prev.goal, ...goal } as RaceGoal };
-      localStorage.setItem('onboarding_data', JSON.stringify(updated));
+      saveToLocalStorage(updated);
       return updated;
     });
   };
@@ -99,7 +149,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   const updateAvailability = (availability: Partial<WeeklyAvailability>) => {
     setData(prev => {
       const updated = { ...prev, availability: { ...prev.availability, ...availability } as WeeklyAvailability };
-      localStorage.setItem('onboarding_data', JSON.stringify(updated));
+      saveToLocalStorage(updated);
       return updated;
     });
   };
@@ -107,7 +157,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   const updateIntegrations = (integrations: Partial<Integrations>) => {
     setData(prev => {
       const updated = { ...prev, integrations: { ...prev.integrations, ...integrations } as Integrations };
-      localStorage.setItem('onboarding_data', JSON.stringify(updated));
+      saveToLocalStorage(updated);
       return updated;
     });
   };
@@ -123,6 +173,33 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     setIsStarted(false);
     localStorage.setItem('onboarding_complete', 'true');
     localStorage.removeItem('onboarding_started');
+
+    // Save profile to Supabase
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      await supabase
+        .from('profiles')
+        .update({
+          first_name: data.profile?.firstName || null,
+          age: data.profile?.age || null,
+          gender: data.profile?.gender || null,
+          weight: data.profile?.weight || null,
+          height: data.profile?.height || null,
+          fitness_level: data.fitness?.fitnessLevel || null,
+          lthr: data.fitness?.lthr || null,
+          threshold_pace: data.fitness?.thresholdPace || null,
+          max_hr: data.fitness?.maxHR || null,
+          ftp: data.fitness?.ftp || null,
+          swim_level: data.fitness?.swimLevel || null,
+          weekly_availability: data.availability || null,
+          integrations: data.integrations || null,
+          onboarding_complete: true,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', user.id);
+    })();
   };
 
   const resetOnboarding = () => {
@@ -136,6 +213,16 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem('onboarding_complete');
     localStorage.removeItem('onboarding_started');
     localStorage.removeItem('onboarding_data');
+
+    // Update Supabase profile
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      await supabase
+        .from('profiles')
+        .update({ onboarding_complete: false })
+        .eq('id', user.id);
+    })();
   };
 
   const nextStep = () => {

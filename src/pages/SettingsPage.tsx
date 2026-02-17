@@ -1,12 +1,14 @@
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { useOnboarding } from '@/contexts/OnboardingContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { Calendar, Activity, Bell, Heart, RefreshCw, Trash2 } from 'lucide-react';
+import { Calendar, Activity, Bell, Heart, RefreshCw, Trash2, LogOut } from 'lucide-react';
 
 export function SettingsPage() {
   const { data, updateIntegrations } = useOnboarding();
+  const { signOut, user } = useAuth();
 
   const handleResetOnboarding = () => {
     if (confirm('This will reset all your data and take you back to onboarding. Are you sure?')) {
@@ -40,8 +42,8 @@ export function SettingsPage() {
                   <h3 className="font-semibold">Google Calendar</h3>
                   <span className={`
                     text-xs px-2 py-1 rounded-full
-                    ${data.integrations?.googleCalendar?.connected 
-                      ? 'bg-success/20 text-success' 
+                    ${data.integrations?.googleCalendar?.connected
+                      ? 'bg-success/20 text-success'
                       : 'bg-muted text-muted-foreground'}
                   `}>
                     {data.integrations?.googleCalendar?.connected ? 'Connected' : 'Not connected'}
@@ -50,7 +52,7 @@ export function SettingsPage() {
                 <p className="text-sm text-muted-foreground mb-4">
                   Sync your training schedule with Google Calendar
                 </p>
-                
+
                 {data.integrations?.googleCalendar?.connected ? (
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
@@ -61,9 +63,9 @@ export function SettingsPage() {
                         id="avoid-conflicts"
                         checked={data.integrations?.googleCalendar?.avoidConflicts ?? true}
                         onCheckedChange={(checked) => updateIntegrations({
-                          googleCalendar: { 
-                            ...data.integrations?.googleCalendar, 
-                            avoidConflicts: checked 
+                          googleCalendar: {
+                            ...data.integrations?.googleCalendar,
+                            avoidConflicts: checked
                           },
                         })}
                       />
@@ -92,8 +94,8 @@ export function SettingsPage() {
                   <h3 className="font-semibold">Strava</h3>
                   <span className={`
                     text-xs px-2 py-1 rounded-full
-                    ${data.integrations?.strava?.connected 
-                      ? 'bg-[#FC4C02]/20 text-[#FC4C02]' 
+                    ${data.integrations?.strava?.connected
+                      ? 'bg-[#FC4C02]/20 text-[#FC4C02]'
                       : 'bg-muted text-muted-foreground'}
                   `}>
                     {data.integrations?.strava?.connected ? 'Connected' : 'Not connected'}
@@ -102,7 +104,7 @@ export function SettingsPage() {
                 <p className="text-sm text-muted-foreground mb-4">
                   Auto-track completed workouts from Strava activities
                 </p>
-                
+
                 {data.integrations?.strava?.connected ? (
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
@@ -113,9 +115,9 @@ export function SettingsPage() {
                         id="auto-complete"
                         checked={data.integrations?.strava?.autoComplete ?? true}
                         onCheckedChange={(checked) => updateIntegrations({
-                          strava: { 
-                            ...data.integrations?.strava, 
-                            autoComplete: checked 
+                          strava: {
+                            ...data.integrations?.strava,
+                            autoComplete: checked
                           },
                         })}
                       />
@@ -137,7 +139,7 @@ export function SettingsPage() {
         {/* Notifications */}
         <section className="space-y-4">
           <h2 className="font-display text-xl font-semibold">Notifications</h2>
-          
+
           <div className="bg-card rounded-2xl border border-border p-6 space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -149,7 +151,7 @@ export function SettingsPage() {
               </div>
               <Switch defaultChecked />
             </div>
-            
+
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <RefreshCw className="w-5 h-5 text-muted-foreground" />
@@ -166,7 +168,7 @@ export function SettingsPage() {
         {/* Heart Rate Zones */}
         <section className="space-y-4">
           <h2 className="font-display text-xl font-semibold">Heart Rate Zones</h2>
-          
+
           <div className="bg-card rounded-2xl border border-border p-6">
             <div className="flex items-start gap-4 mb-4">
               <Heart className="w-5 h-5 text-primary mt-1" />
@@ -177,7 +179,7 @@ export function SettingsPage() {
                 </p>
               </div>
             </div>
-            
+
             <div className="space-y-2">
               {[
                 { zone: 1, name: 'Recovery', range: '< 80%', color: 'bg-blue-500' },
@@ -197,10 +199,37 @@ export function SettingsPage() {
           </div>
         </section>
 
+        {/* Account */}
+        <section className="space-y-4">
+          <h2 className="font-display text-xl font-semibold">Account</h2>
+
+          <div className="bg-card rounded-2xl border border-border p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="font-semibold">Sign Out</h3>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {user?.email ? `Signed in as ${user.email}` : 'Sign out of your account'}
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                onClick={async () => {
+                  await signOut();
+                  window.location.href = '/login';
+                }}
+                className="shrink-0"
+              >
+                <LogOut className="w-4 h-4 mr-2" />
+                Sign Out
+              </Button>
+            </div>
+          </div>
+        </section>
+
         {/* Danger Zone */}
         <section className="space-y-4">
           <h2 className="font-display text-xl font-semibold text-destructive">Danger Zone</h2>
-          
+
           <div className="bg-destructive/10 rounded-2xl border border-destructive/30 p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
@@ -209,8 +238,8 @@ export function SettingsPage() {
                   This will delete all your training data, plans, and settings. You'll need to complete onboarding again.
                 </p>
               </div>
-              <Button 
-                variant="destructive" 
+              <Button
+                variant="destructive"
                 onClick={handleResetOnboarding}
                 className="shrink-0"
               >
