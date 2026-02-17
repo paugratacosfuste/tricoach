@@ -1,6 +1,6 @@
 # TriCoach AI — Project Status
 
-> Last updated: 2026-02-17
+> Last updated: 2026-02-17 (Phase 2 + Design System)
 
 ---
 
@@ -17,7 +17,8 @@ An AI-powered triathlon and running coaching application that generates personal
 | **Framework** | Vite + React 18 | SPA, no SSR |
 | **Language** | TypeScript | Strict types across the codebase |
 | **UI Components** | shadcn/ui (49 components) | Built on Radix UI primitives |
-| **Styling** | Tailwind CSS 3.x | Custom theme tokens (sport colors, gradients) |
+| **Styling** | Tailwind CSS 3.x | Custom design system tokens (discipline colors, gradients, type scale) |
+| **Typography** | Outfit + DM Sans + JetBrains Mono | Display / body / data fonts via Google Fonts |
 | **Routing** | React Router DOM v6 | 11 routes in `App.tsx` (3 public + 8 protected) |
 | **State Management** | React Context API | 3 contexts: `AuthContext`, `TrainingContext`, `OnboardingContext` |
 | **Data Persistence** | Supabase (PostgreSQL) | Full schema with RLS; localStorage as offline cache |
@@ -85,12 +86,13 @@ tricoach-ai/
 │   │   ├── SignupPage.tsx              # Registration with email confirmation (orange palette)
 │   │   ├── ConfirmEmailPage.tsx        # Post-signup verification page (orange palette)
 │   │   ├── Index.tsx                   # Gate: welcome → onboarding → dashboard
-│   │   ├── Dashboard.tsx               # Main training view (current week)
+│   │   ├── Dashboard.tsx               # Main training view (current week, hero gradient)
 │   │   ├── CalendarPage.tsx            # Calendar view of workouts (no drag-and-drop yet)
 │   │   ├── ProgressPage.tsx            # Basic analytics with Recharts
-│   │   ├── GoalsPage.tsx               # Race goal display (read-only)
-│   │   ├── SettingsPage.tsx            # Integrations UI (not wired), sign out
-│   │   ├── ProfilePage.tsx             # Fitness metrics display and edit (no Supabase persist)
+│   │   ├── HistoryPage.tsx             # Browse completed training weeks
+│   │   ├── GoalsPage.tsx               # Race goal display + inline editing
+│   │   ├── SettingsPage.tsx            # Notification prefs (localStorage), reset, sign out
+│   │   ├── ProfilePage.tsx             # Fitness metrics — edit + Supabase persist
 │   │   └── NotFound.tsx                # 404
 │   │
 │   ├── contexts/
@@ -103,12 +105,12 @@ tricoach-ai/
 │   │   ├── ErrorBoundary.tsx           # Global error boundary with recovery UI
 │   │   ├── WeekReview.tsx              # End-of-week feedback dialog
 │   │   ├── dashboard/
-│   │   │   ├── DashboardLayout.tsx     # Layout wrapper
-│   │   │   ├── Sidebar.tsx             # Desktop navigation sidebar
-│   │   │   ├── MobileNav.tsx           # Mobile bottom navigation
+│   │   │   ├── DashboardLayout.tsx     # Layout wrapper (960px max-width, fixed sidebar offset)
+│   │   │   ├── Sidebar.tsx             # Desktop nav sidebar (240px fixed, phase badge)
+│   │   │   ├── MobileNav.tsx           # Mobile bottom nav (56px, 5 items, 44px targets)
 │   │   │   ├── WeeklyStrip.tsx         # Horizontal day strip
-│   │   │   ├── WorkoutCard.tsx         # Workout summary card
-│   │   │   └── WorkoutDetailSheet.tsx  # Workout detail slide-out (no logging form)
+│   │   │   ├── WorkoutCard.tsx         # Workout card (3px discipline border, font-data)
+│   │   │   └── WorkoutDetailSheet.tsx  # Workout detail + completion form (RPE, HR, feeling)
 │   │   ├── onboarding/                 # 5-step wizard
 │   │   └── ui/                         # 49 shadcn/ui components
 │   │
@@ -158,7 +160,7 @@ TrainingPlan
 │       ├── structure: WorkoutSegment[], heartRateGuidance, paceGuidance
 │       ├── coachingTips[], adaptationNotes
 │       ├── status: 'planned' | 'completed' | 'skipped' | 'partial'
-│       └── actualData?: { duration, distance?, avgHR?, feeling: 1-5, notes? }
+│       └── actualData?: { duration, distance?, avgHR?, feeling: 1-5, rpe?: 1-10, notes? }
 └── completedWeeks: CompletedWeek[]
     └── (same as WeekPlan + WeekSummary with feedback)
 ```
@@ -194,27 +196,35 @@ The app calls Claude via a **Vercel serverless proxy** at `/api/generate-week`:
 - **Onboarding wizard** — 5-step flow with Supabase profile sync on completion
 - **AI plan generation** — Triathlon-aware prompts, JSON parsing with error recovery, week-by-week adaptation
 - **Dashboard** — Current week display, today's workout highlight, upcoming workouts, weekly progress ring
-- **Basic workout actions** — Mark complete / skip (status toggle only, no detailed logging)
 - **Week review & next week generation** — Feedback dialog → Claude → new adaptive week
 - **Calendar page** — Monthly view with color-coded workout indicators
 - **Progress page** — Basic charts (bar chart, line chart) with Recharts
-- **Settings page** — Sign out, UI for toggles (not persisted to DB)
-- **Profile page** — View/edit fitness metrics (not persisted to Supabase on save)
-- **Goals page** — Display race goal information (read-only)
 - **Error boundary** — Global error boundary with "Try Again" and "Reset Data" recovery
 - **Branding** — Custom TriCoach favicon, orange auth pages, all Lovable branding removed
 
-### 🔨 Phase 2: Core Experience Polish (NOT YET STARTED)
+### ✅ Phase 2: Core Experience Polish (PARTIALLY DONE)
 
-- Detailed workout completion logging (actual HR, RPE, duration, notes)
-- Actual vs planned comparison display
-- Multi-week history browser page
-- Profile ↔ Training sync (Supabase persist + replanning trigger)
-- Workout rescheduling (move between days)
-- Plan change requests (RegeneratePlanDialog)
-- Goal editing with automatic replanning
-- Settings persistence to Supabase
-- Unit test suite
+- ✅ **Detailed workout completion logging** — Completion form captures actual duration, distance, HR, RPE (1-10), feeling (emoji 1-5), and notes. Actual data persisted to Supabase.
+- ✅ **Actual vs planned comparison** — Completed workouts show side-by-side comparison in WorkoutDetailSheet
+- ✅ **Multi-week history browser** — `HistoryPage.tsx` with expandable completed week timeline, feeling indicators, completion rates
+- ✅ **Profile → Supabase sync** — Save button persists profile + fitness data to Supabase `profiles` table
+- ✅ **Goal editing** — Inline edit form for race name, type, date, goal time, priority. Saves to context + Supabase `training_plans`
+- ✅ **Settings persistence** — Notification preferences saved to localStorage. Reset calls `resetPlan()` for Supabase cleanup.
+- ❌ Workout rescheduling (move between days) — Not yet implemented
+- ❌ Plan change request dialog — Not yet implemented
+- ❌ Unit test suite — Not yet implemented
+
+### ✅ Design System Applied
+
+- ✅ **Fonts** — Outfit (display/headings), DM Sans (body), JetBrains Mono (numerical data)
+- ✅ **Color tokens** — Exact HSL values matching `tricoach-design-system.md` spec
+- ✅ **Body background** — Radial gradient + noise overlay texture
+- ✅ **Card system** — 3-tier: base, elevated, glass
+- ✅ **Workout cards** — 3px left border in discipline color, status-based opacity
+- ✅ **Layout** — Fixed 240px sidebar, 960px max-width content, 56px mobile nav with 44px touch targets
+- ✅ **Animations** — Page fade-up, completion pop, ring fill, slide-up keyframes
+- ✅ **Phase badges** — All-caps pill badges with phase-specific colors
+- ✅ **Auth pages** — Hero mesh gradient, glass card, fade-up entrance animation
 
 ### 🔮 Phase 3: Integrations (NOT YET STARTED)
 
@@ -255,9 +265,9 @@ All Phase 1 technical issues have been addressed:
 
 ## 6. Known Limitations
 
-- **Profile edits don't persist to Supabase** — Changes update local context only (Phase 2 fix)
-- **No detailed workout logging** — Complete/skip is a status toggle, no actual data capture (Phase 2 fix)
-- **Settings don't persist** — UI toggles reset on reload (Phase 2 fix)
-- **Goals are read-only** — No editing capability (Phase 2 fix)
-- **No history browser** — Can only see current week (Phase 2 fix)
-- **No workout rescheduling** — Cannot move workouts between days (Phase 2 fix)
+- **Profile replanning trigger missing** — Profile saves to Supabase but doesn't prompt to regenerate plan when metrics change
+- **No workout rescheduling** — Cannot move workouts between days (Phase 2 backlog)
+- **No plan change dialog** — Users can only regenerate via week review, no ad-hoc request button
+- **Settings use localStorage** — Not synced to Supabase `settings` JSONB column yet
+- **No unit tests** — Core logic functions untested (Phase 2 backlog)
+- **Local build blocked** — DNS/network issue prevents `npm install`; must deploy to Vercel for build verification

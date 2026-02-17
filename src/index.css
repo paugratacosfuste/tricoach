@@ -1,4 +1,7 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap');
+/* === TriCoach AI — Design System CSS === */
+
+/* Fonts: Outfit (display), DM Sans (body), JetBrains Mono (data) */
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800&family=DM+Sans:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -6,96 +9,115 @@
 
 @layer base {
   :root {
-    /* Athletic Deep Navy Theme */
-    --background: 222 47% 6%;
-    --foreground: 210 40% 98%;
+    /* Background layers — deep navy */
+    --background: 220 25% 6%;
+    --foreground: 210 25% 95%;
 
-    --card: 222 47% 8%;
-    --card-foreground: 210 40% 98%;
+    /* Surface layers */
+    --card: 220 25% 9%;
+    --card-foreground: 210 25% 95%;
 
-    --popover: 222 47% 10%;
-    --popover-foreground: 210 40% 98%;
+    --popover: 220 25% 12%;
+    --popover-foreground: 210 25% 95%;
 
-    /* Vibrant Coral Accent */
-    --primary: 12 100% 64%;
-    --primary-foreground: 222 47% 6%;
+    /* Primary accent — run orange */
+    --primary: 16 100% 60%;
+    --primary-foreground: 220 25% 6%;
 
-    --secondary: 222 30% 15%;
-    --secondary-foreground: 210 40% 98%;
+    --secondary: 220 25% 16%;
+    --secondary-foreground: 210 25% 95%;
 
-    --muted: 222 30% 12%;
-    --muted-foreground: 215 20% 55%;
+    --muted: 220 25% 12%;
+    --muted-foreground: 215 15% 60%;
 
-    --accent: 222 30% 18%;
-    --accent-foreground: 210 40% 98%;
+    --accent: 220 25% 16%;
+    --accent-foreground: 210 25% 95%;
 
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 0 75% 55%;
+    --destructive-foreground: 210 25% 95%;
 
-    --border: 222 30% 18%;
-    --input: 222 30% 15%;
-    --ring: 12 100% 64%;
+    /* Borders */
+    --border: 220 20% 16%;
+    --border-default: 220 20% 22%;
+    --border-strong: 220 20% 30%;
+    --input: 220 25% 12%;
+    --ring: 16 100% 60%;
 
     --radius: 0.75rem;
 
-    /* Sport-specific colors */
-    --swim: 195 100% 50%;
-    --bike: 145 80% 45%;
-    --run: 12 100% 64%;
-    --strength: 280 80% 60%;
-    --rest: 222 30% 30%;
+    /* Discipline colors */
+    --swim: 195 90% 55%;
+    --bike: 150 75% 45%;
+    --run: 16 100% 60%;
+    --strength: 270 65% 60%;
+    --rest: 220 15% 35%;
 
-    /* Success/Warning */
-    --success: 145 80% 45%;
-    --warning: 45 100% 55%;
-
-    /* Gradients */
-    --gradient-hero: linear-gradient(135deg, hsl(12 100% 64%) 0%, hsl(25 100% 60%) 100%);
-    --gradient-card: linear-gradient(180deg, hsl(222 47% 10%) 0%, hsl(222 47% 8%) 100%);
-    --gradient-glow: radial-gradient(ellipse at center, hsl(12 100% 64% / 0.15) 0%, transparent 70%);
+    /* Semantic */
+    --success: 150 75% 45%;
+    --warning: 42 100% 55%;
+    --info: 210 80% 60%;
 
     /* Shadows */
-    --shadow-glow: 0 0 40px hsl(12 100% 64% / 0.2);
-    --shadow-card: 0 4px 24px hsl(222 47% 4% / 0.5);
+    --shadow-sm: 0 1px 3px hsl(220 25% 4% / 0.3);
+    --shadow-md: 0 4px 12px hsl(220 25% 4% / 0.4);
+    --shadow-lg: 0 8px 32px hsl(220 25% 4% / 0.5);
+    --shadow-glow: 0 0 24px hsl(16 100% 60% / 0.15);
+    --shadow-card: 0 4px 24px hsl(220 25% 4% / 0.4);
 
-    --sidebar-background: 222 47% 6%;
-    --sidebar-foreground: 210 40% 98%;
-    --sidebar-primary: 12 100% 64%;
-    --sidebar-primary-foreground: 222 47% 6%;
-    --sidebar-accent: 222 30% 15%;
-    --sidebar-accent-foreground: 210 40% 98%;
-    --sidebar-border: 222 30% 18%;
-    --sidebar-ring: 12 100% 64%;
+    /* Gradients */
+    --gradient-hero: linear-gradient(135deg, hsl(16 100% 60%) 0%, hsl(25 100% 55%) 100%);
+
+    /* Sidebar */
+    --sidebar-background: 220 25% 6%;
+    --sidebar-foreground: 210 25% 95%;
+    --sidebar-primary: 16 100% 60%;
+    --sidebar-primary-foreground: 220 25% 6%;
+    --sidebar-accent: 220 25% 16%;
+    --sidebar-accent-foreground: 210 25% 95%;
+    --sidebar-border: 220 20% 16%;
+    --sidebar-ring: 16 100% 60%;
+
+    /* Type scale */
+    --text-xs: 0.75rem;
+    --text-sm: 0.8125rem;
+    --text-base: 0.9375rem;
+    --text-lg: 1.125rem;
+    --text-xl: 1.375rem;
+    --text-2xl: 1.75rem;
+    --text-3xl: 2.25rem;
   }
 
+  /* Light theme */
   .light {
-    --background: 0 0% 98%;
-    --foreground: 222 47% 11%;
+    --background: 220 15% 97%;
+    --foreground: 220 25% 10%;
 
     --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
+    --card-foreground: 220 25% 10%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
+    --popover-foreground: 220 25% 10%;
 
-    --primary: 12 100% 55%;
+    --primary: 16 100% 55%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 222 20% 94%;
-    --secondary-foreground: 222 47% 11%;
+    --secondary: 220 15% 93%;
+    --secondary-foreground: 220 25% 10%;
 
-    --muted: 222 20% 94%;
-    --muted-foreground: 222 20% 45%;
+    --muted: 220 15% 93%;
+    --muted-foreground: 215 15% 45%;
 
-    --accent: 222 20% 92%;
-    --accent-foreground: 222 47% 11%;
+    --accent: 220 15% 93%;
+    --accent-foreground: 220 25% 10%;
 
-    --destructive: 0 84% 60%;
+    --destructive: 0 75% 55%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 222 20% 88%;
-    --input: 222 20% 88%;
-    --ring: 12 100% 55%;
+    --border: 220 15% 90%;
+    --border-default: 220 15% 85%;
+    --border-strong: 220 15% 70%;
+    --input: 220 15% 93%;
+    --ring: 16 100% 55%;
   }
 }
 
@@ -106,7 +128,15 @@
 
   body {
     @apply bg-background text-foreground antialiased;
-    font-family: 'Inter', system-ui, sans-serif;
+    font-family: 'DM Sans', system-ui, sans-serif;
+    font-size: var(--text-base);
+    line-height: 1.6;
+    /* Subtle radial gradient background */
+    background:
+      radial-gradient(ellipse 80% 60% at 10% 10%,
+        hsl(220 30% 10%) 0%,
+        hsl(220 25% 6%) 60%);
+    background-attachment: fixed;
   }
 
   h1,
@@ -115,15 +145,112 @@
   h4,
   h5,
   h6 {
-    font-family: 'Space Grotesk', sans-serif;
+    font-family: 'Outfit', sans-serif;
+    letter-spacing: -0.01em;
+  }
+
+  /* Numerical data should use mono font */
+  .font-data {
+    font-family: 'JetBrains Mono', monospace;
+    font-variant-numeric: tabular-nums;
   }
 }
 
 @layer components {
-  .glass-card {
-    @apply bg-card/80 backdrop-blur-xl border border-border/50 shadow-lg;
+
+  /* === Card System === */
+  .card-base {
+    background: hsl(var(--card));
+    border: 1px solid hsl(220 20% 16%);
+    border-radius: 12px;
+    padding: 24px;
   }
 
+  .card-elevated {
+    background: hsl(var(--popover));
+    border: 1px solid hsl(220 20% 22%);
+    border-radius: 16px;
+    padding: 24px;
+    box-shadow: 0 4px 24px hsl(220 25% 4% / 0.4);
+  }
+
+  .card-glass {
+    background: hsl(220 25% 10% / 0.6);
+    backdrop-filter: blur(16px);
+    border: 1px solid hsl(220 25% 25% / 0.3);
+    border-radius: 16px;
+    padding: 24px;
+  }
+
+  /* === Discipline Workout Cards === */
+  .workout-swim {
+    border-left: 3px solid hsl(var(--swim) / 0.5);
+    background: hsl(var(--swim) / 0.10);
+  }
+
+  .workout-bike {
+    border-left: 3px solid hsl(var(--bike) / 0.5);
+    background: hsl(var(--bike) / 0.10);
+  }
+
+  .workout-run {
+    border-left: 3px solid hsl(var(--run) / 0.5);
+    background: hsl(var(--run) / 0.10);
+  }
+
+  .workout-strength {
+    border-left: 3px solid hsl(var(--strength) / 0.5);
+    background: hsl(var(--strength) / 0.10);
+  }
+
+  .workout-rest {
+    border-left: 3px solid hsl(var(--rest) / 0.3);
+    background: hsl(var(--rest) / 0.08);
+  }
+
+  /* === Buttons === */
+  .btn-primary {
+    background: linear-gradient(135deg, hsl(var(--run)), hsl(25 100% 55%));
+    color: white;
+    font-family: 'Outfit', sans-serif;
+    font-weight: 600;
+    border-radius: 8px;
+    padding: 12px 24px;
+    transition: opacity 150ms, transform 150ms;
+  }
+
+  .btn-primary:hover {
+    opacity: 0.9;
+    transform: translateY(-1px);
+  }
+
+  .btn-secondary {
+    background: transparent;
+    border: 1px solid hsl(220 20% 22%);
+    color: hsl(215 15% 60%);
+    font-family: 'Outfit', sans-serif;
+    font-weight: 600;
+    border-radius: 8px;
+    padding: 12px 24px;
+  }
+
+  .btn-destructive {
+    background: hsl(0 75% 55% / 0.15);
+    color: hsl(0 75% 55%);
+    border: 1px solid hsl(0 75% 55% / 0.3);
+    font-family: 'Outfit', sans-serif;
+    font-weight: 600;
+    border-radius: 8px;
+    padding: 12px 24px;
+  }
+
+  /* === Glass Card === */
+  .glass-card {
+    @apply backdrop-blur-xl border border-border/50 shadow-lg;
+    background: hsl(220 25% 10% / 0.6);
+  }
+
+  /* === Gradients === */
   .glow-effect {
     box-shadow: var(--shadow-glow);
   }
@@ -133,28 +260,151 @@
     background-image: var(--gradient-hero);
   }
 
-  .workout-swim {
-    @apply bg-[hsl(var(--swim))]/20 border-[hsl(var(--swim))]/30 text-[hsl(var(--swim))];
+  /* Hero mesh gradient (tricolor subliminal glow) */
+  .hero-gradient {
+    background:
+      radial-gradient(ellipse at 20% 50%, hsl(16 100% 60% / 0.08) 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 30%, hsl(195 90% 55% / 0.06) 0%, transparent 50%),
+      radial-gradient(ellipse at 50% 80%, hsl(150 75% 45% / 0.05) 0%, transparent 50%);
   }
 
-  .workout-bike {
-    @apply bg-[hsl(var(--bike))]/20 border-[hsl(var(--bike))]/30 text-[hsl(var(--bike))];
+  /* Input focus styling */
+  input:focus,
+  select:focus,
+  textarea:focus {
+    border-color: hsl(var(--run));
+    outline: none;
+    box-shadow: 0 0 0 3px hsl(16 100% 60% / 0.15);
   }
 
-  .workout-run {
-    @apply bg-primary/20 border-primary/30 text-primary;
+  /* Phase badges (all-caps pill) */
+  .phase-badge {
+    font-family: 'Outfit', sans-serif;
+    font-weight: 700;
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    border-radius: 9999px;
+    padding: 4px 12px;
   }
 
-  .workout-strength {
-    @apply bg-[hsl(var(--strength))]/20 border-[hsl(var(--strength))]/30 text-[hsl(var(--strength))];
+  /* Training phase color mapping */
+  .phase-base {
+    background: hsl(var(--swim) / 0.15);
+    color: hsl(var(--swim));
   }
 
-  .workout-rest {
-    @apply bg-muted/50 border-border text-muted-foreground;
+  .phase-build {
+    background: hsl(var(--bike) / 0.15);
+    color: hsl(var(--bike));
+  }
+
+  .phase-peak {
+    background: hsl(var(--run) / 0.15);
+    color: hsl(var(--run));
+  }
+
+  .phase-taper {
+    background: hsl(var(--warning) / 0.15);
+    color: hsl(var(--warning));
+  }
+
+  .phase-race {
+    background: hsl(45 100% 60% / 0.15);
+    color: hsl(45 100% 70%);
+  }
+
+  /* Status indicators */
+  .status-planned {
+    color: hsl(215 12% 40%);
+  }
+
+  .status-completed {
+    color: hsl(var(--success));
+    opacity: 0.7;
+  }
+
+  .status-skipped {
+    color: hsl(var(--destructive));
+    opacity: 0.5;
+  }
+
+  .status-partial {
+    color: hsl(var(--warning));
   }
 }
 
 @layer utilities {
+  /* === Animations === */
+
+  /* Page content entrance — staggered fade-up */
+  @keyframes fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-fade-up {
+    animation: fade-up 400ms ease-out forwards;
+  }
+
+  /* Workout completion — satisfying checkmark scale */
+  @keyframes complete-pop {
+    0% {
+      transform: scale(0.8);
+      opacity: 0;
+    }
+
+    60% {
+      transform: scale(1.1);
+    }
+
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+
+  .animate-complete-pop {
+    animation: complete-pop 300ms ease-out forwards;
+  }
+
+  /* Progress ring fill — smooth arc draw */
+  @keyframes ring-fill {
+    from {
+      stroke-dashoffset: var(--circumference);
+    }
+
+    to {
+      stroke-dashoffset: var(--target-offset);
+    }
+  }
+
+  .animate-ring-fill circle {
+    animation: ring-fill 800ms ease-out forwards;
+  }
+
+  /* Sheet / modal entrance */
+  @keyframes slide-up {
+    from {
+      transform: translateY(100%);
+    }
+
+    to {
+      transform: translateY(0);
+    }
+  }
+
+  .animate-slide-up {
+    animation: slide-up 300ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
   .animate-pulse-slow {
     animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   }
@@ -183,4 +433,15 @@
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
   }
+}
+
+/* Noise overlay — very subtle texture */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+  opacity: 0.03;
+  pointer-events: none;
+  z-index: 9999;
 }

@@ -40,11 +40,11 @@ const feelingEmojis: Record<string, string> = {
 function getStatusIcon(status: string) {
     switch (status) {
         case 'completed':
-            return <CheckCircle2 className="w-4 h-4 text-green-500" />;
+            return <CheckCircle2 className="w-4 h-4 text-success" />;
         case 'skipped':
-            return <XCircle className="w-4 h-4 text-red-500" />;
+            return <XCircle className="w-4 h-4 text-destructive" />;
         case 'partial':
-            return <Circle className="w-4 h-4 text-yellow-500" />;
+            return <Circle className="w-4 h-4 text-warning" />;
         default:
             return <Circle className="w-4 h-4 text-muted-foreground" />;
     }
@@ -74,7 +74,7 @@ export function HistoryPage() {
 
     return (
         <DashboardLayout>
-            <div className="p-6 lg:p-8 max-w-4xl mx-auto">
+            <div className="space-y-6">
                 <div className="mb-6">
                     <h1 className="font-display text-2xl lg:text-3xl font-bold flex items-center gap-3">
                         <History className="w-7 h-7 text-primary" />
@@ -140,10 +140,10 @@ function WeekHistoryCard({ week, isExpanded, onToggle }: WeekHistoryCardProps) {
                         <div className="flex items-center gap-3">
                             {/* Week number circle */}
                             <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                                <span className="text-sm font-bold text-primary">W{week.weekNumber}</span>
+                                <span className="text-sm font-display font-bold text-primary">W{week.weekNumber}</span>
                             </div>
                             <div>
-                                <CardTitle className="text-base">{week.theme || `Week ${week.weekNumber}`}</CardTitle>
+                                <CardTitle className="text-base font-display">{week.theme || `Week ${week.weekNumber}`}</CardTitle>
                                 <p className="text-sm text-muted-foreground">
                                     {formatDateRange(week.startDate, week.endDate)} · {week.phase}
                                 </p>
@@ -181,7 +181,7 @@ function WeekHistoryCard({ week, isExpanded, onToggle }: WeekHistoryCardProps) {
                                     style={{ width: `${completionRate}%` }}
                                 />
                             </div>
-                            <span className="text-sm text-muted-foreground font-medium">{completionRate}%</span>
+                            <span className="text-sm text-muted-foreground font-data font-medium">{completionRate}%</span>
                         </div>
 
                         {/* Workout list */}
@@ -238,12 +238,12 @@ function WorkoutHistoryItem({ workout }: WorkoutHistoryItemProps) {
                 </div>
                 <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
                     <span>{dateStr}</span>
-                    <span className="flex items-center gap-1">
+                    <span className="flex items-center gap-1 font-data">
                         <Clock className="w-3 h-3" />
                         {workout.actualData?.duration || workout.duration}min
                     </span>
                     {(workout.actualData?.distance || workout.distance) && (
-                        <span className="flex items-center gap-1">
+                        <span className="flex items-center gap-1 font-data">
                             <MapPin className="w-3 h-3" />
                             {workout.actualData?.distance || workout.distance}km
                         </span>

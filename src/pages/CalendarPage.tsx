@@ -99,7 +99,7 @@ export function CalendarPage() {
 
   return (
     <DashboardLayout>
-      <div className="p-6 lg:p-8">
+      <div className="space-y-6">
         <div className="mb-6">
           <h1 className="font-display text-2xl lg:text-3xl font-bold">Training Calendar</h1>
           <p className="text-muted-foreground mt-1">

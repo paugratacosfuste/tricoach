@@ -11,12 +11,12 @@ const workoutIcons: Record<WorkoutType, string> = {
   rest: '😴',
 };
 
-const workoutColors: Record<WorkoutType, string> = {
-  run: 'border-l-primary bg-primary/5',
-  bike: 'border-l-bike bg-bike/5',
-  swim: 'border-l-swim bg-swim/5',
-  strength: 'border-l-strength bg-strength/5',
-  rest: 'border-l-muted bg-muted/20',
+const workoutCardClass: Record<WorkoutType, string> = {
+  run: 'workout-run',
+  bike: 'workout-bike',
+  swim: 'workout-swim',
+  strength: 'workout-strength',
+  rest: 'workout-rest',
 };
 
 interface WorkoutCardProps {
@@ -28,48 +28,50 @@ interface WorkoutCardProps {
   compact?: boolean;
 }
 
-export function WorkoutCard({ 
-  workout, 
-  showDate = false, 
-  onComplete, 
-  onSkip, 
+export function WorkoutCard({
+  workout,
+  showDate = false,
+  onComplete,
+  onSkip,
   onClick,
-  compact = false 
+  compact = false
 }: WorkoutCardProps) {
   const statusBadge = () => {
     switch (workout.status) {
       case 'completed':
-        return <span className="text-xs px-2 py-1 rounded-full bg-success/20 text-success">Completed</span>;
+        return <span className="text-xs px-2 py-1 rounded-full bg-success/20 text-success font-medium">Completed</span>;
       case 'skipped':
-        return <span className="text-xs px-2 py-1 rounded-full bg-destructive/20 text-destructive">Skipped</span>;
+        return <span className="text-xs px-2 py-1 rounded-full bg-destructive/20 text-destructive font-medium">Skipped</span>;
       case 'partial':
-        return <span className="text-xs px-2 py-1 rounded-full bg-warning/20 text-warning">Partial</span>;
+        return <span className="text-xs px-2 py-1 rounded-full bg-warning/20 text-warning font-medium">Partial</span>;
       default:
         return null;
     }
   };
+
+  const statusOpacity = workout.status === 'completed' ? 'opacity-70' : workout.status === 'skipped' ? 'opacity-50' : '';
 
   if (compact) {
     return (
       <div
         onClick={onClick}
         className={`
-          p-3 rounded-xl border-l-4 cursor-pointer transition-all hover:scale-[1.02]
-          ${workoutColors[workout.type]}
-          ${workout.status === 'completed' ? 'opacity-60' : ''}
+          p-3 rounded-lg cursor-pointer transition-all hover:scale-[1.02]
+          ${workoutCardClass[workout.type]}
+          ${statusOpacity}
         `}
       >
         <div className="flex items-center gap-3">
           <span className="text-2xl">{workoutIcons[workout.type]}</span>
           <div className="flex-1 min-w-0">
-            <p className="font-medium truncate">{workout.name}</p>
+            <p className="font-display font-semibold truncate">{workout.name}</p>
             <div className="flex items-center gap-3 text-xs text-muted-foreground">
-              <span className="flex items-center gap-1">
+              <span className="flex items-center gap-1 font-data">
                 <Clock className="w-3 h-3" />
                 {workout.duration}min
               </span>
               {workout.distance && (
-                <span className="flex items-center gap-1">
+                <span className="flex items-center gap-1 font-data">
                   <MapPin className="w-3 h-3" />
                   {workout.distance}km
                 </span>
@@ -86,9 +88,10 @@ export function WorkoutCard({
   return (
     <div
       className={`
-        p-6 rounded-2xl border-l-4 glass-card transition-all
-        ${workoutColors[workout.type]}
+        p-6 rounded-xl card-base transition-all
+        ${workoutCardClass[workout.type]}
         ${onClick ? 'cursor-pointer hover:scale-[1.01]' : ''}
+        ${statusOpacity}
       `}
       onClick={onClick}
     >
@@ -101,14 +104,14 @@ export function WorkoutCard({
                 {format(new Date(workout.date), 'EEEE, MMMM d')}
               </p>
             )}
-            <h3 className="font-display text-xl font-semibold">{workout.name}</h3>
+            <h3 className="font-display text-lg font-semibold">{workout.name}</h3>
             <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
-              <span className="flex items-center gap-1">
+              <span className="flex items-center gap-1 font-data">
                 <Clock className="w-4 h-4" />
                 {workout.duration}min
               </span>
               {workout.distance && (
-                <span className="flex items-center gap-1">
+                <span className="flex items-center gap-1 font-data">
                   <MapPin className="w-4 h-4" />
                   {workout.distance}km
                 </span>
@@ -129,7 +132,7 @@ export function WorkoutCard({
             <Button
               onClick={(e) => { e.stopPropagation(); onComplete(); }}
               size="sm"
-              className="flex-1 bg-hero-gradient hover:opacity-90"
+              className="flex-1 bg-hero-gradient hover:opacity-90 font-display font-semibold"
             >
               <Check className="w-4 h-4 mr-1" />
               Mark Done

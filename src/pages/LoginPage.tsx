@@ -31,21 +31,21 @@ export default function LoginPage() {
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-orange-950 p-4">
-            <div className="w-full max-w-md space-y-8">
+        <div className="min-h-screen flex items-center justify-center hero-gradient p-4">
+            <div className="w-full max-w-md space-y-8 animate-fade-up">
                 {/* Logo */}
                 <div className="text-center space-y-2">
-                    <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-orange-500 to-amber-400 shadow-lg shadow-orange-500/25">
+                    <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-hero-gradient shadow-lg shadow-glow">
                         <Activity className="w-7 h-7 text-white" />
                     </div>
-                    <h1 className="text-3xl font-bold text-white tracking-tight">TriCoach AI</h1>
-                    <p className="text-slate-400">Your AI-powered triathlon coach</p>
+                    <h1 className="font-display text-3xl font-bold text-foreground tracking-tight">TriCoach AI</h1>
+                    <p className="text-muted-foreground">Your AI-powered triathlon coach</p>
                 </div>
 
-                <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-xl shadow-2xl">
+                <Card className="border-border card-glass shadow-2xl">
                     <CardHeader className="space-y-1 pb-4">
-                        <CardTitle className="text-xl text-white">Welcome back</CardTitle>
-                        <CardDescription className="text-slate-400">
+                        <CardTitle className="text-xl font-display text-foreground">Welcome back</CardTitle>
+                        <CardDescription className="text-muted-foreground">
                             Sign in to your account to continue training
                         </CardDescription>
                     </CardHeader>

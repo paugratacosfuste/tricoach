@@ -64,9 +64,9 @@
 ## Phase 2: Core Experience Polish
 
 > **Priority:** High — These features directly improve the daily training experience.
-> **Estimated effort:** ~3-4 sessions
+> **Status:** Partially complete — 2.1, 2.2, 2.3, 2.5, 2.6, 2.8 done
 
-### 2.1 Workout Detail Logging
+### 2.1 Workout Detail Logging ✅ DONE
 
 **Goal:** When marking a workout complete, capture actual performance data instead of just flipping status.
 
@@ -134,7 +134,7 @@ Notes: "Legs felt heavy in the last km"
 
 ---
 
-### 2.2 Multi-Week History Browser
+### 2.2 Multi-Week History Browser ✅ DONE
 
 **Goal:** Browse all completed training weeks with workout detail.
 
@@ -173,7 +173,7 @@ Notes: "Legs felt heavy in the last km"
 
 ---
 
-### 2.3 Profile ↔ Training Sync
+### 2.3 Profile ↔ Training Sync ✅ DONE (partial — save works, replanning trigger not yet implemented)
 
 **Goal:** When fitness metrics change, offer to regenerate the training plan with updated data.
 
@@ -275,7 +275,7 @@ Add a "Request Plan Change" button below the weekly overview:
 
 ---
 
-### 2.5 Goal Editing with Replanning
+### 2.5 Goal Editing with Replanning ✅ DONE (editing works, automatic replanning not yet triggered)
 
 **Goal:** Allow athletes to modify their race goal and trigger automatic replanning.
 
@@ -318,7 +318,7 @@ Add a "Request Plan Change" button below the weekly overview:
 
 ---
 
-### 2.6 Settings Persistence
+### 2.6 Settings Persistence ✅ DONE (localStorage — Supabase sync deferred)
 
 **Goal:** Persist user preferences to Supabase.
 
@@ -379,6 +379,24 @@ Add a "Request Plan Change" button below the weekly overview:
 - Test form validation
 
 **Run tests with:** `npm run test`
+
+---
+
+### 2.8 Design System Application ✅ DONE
+
+**Goal:** Apply the `tricoach-design-system.md` spec across the entire app.
+
+#### Files Modified
+- `src/index.css` — Complete rewrite: Outfit/DM Sans/JetBrains Mono fonts, exact HSL color tokens, body radial gradient, noise overlay, 3-tier card system (base/elevated/glass), workout 3px left borders, phase badges, status classes, 6 animation keyframes
+- `tailwind.config.ts` — Updated font families, border-radius scale, discipline glow shadows, new keyframes
+- `src/components/dashboard/WorkoutCard.tsx` — 3px discipline border, `font-data` for numbers, status opacity
+- `src/components/dashboard/DashboardLayout.tsx` — 960px max-width, fixed sidebar offset
+- `src/components/dashboard/Sidebar.tsx` — 240px fixed, phase badge footer, shadow-glow logo
+- `src/components/dashboard/MobileNav.tsx` — 56px height, 5 items max, 44px touch targets
+- `src/pages/Dashboard.tsx` — Hero mesh gradient, phase badges, card-elevated, font-data
+- `src/pages/LoginPage.tsx` — hero-gradient bg, card-glass, font-display, animate-fade-up
+- `src/pages/SignupPage.tsx` — hero-gradient bg, animate-fade-up
+- `src/pages/ProfilePage.tsx`, `SettingsPage.tsx`, `ProgressPage.tsx`, `CalendarPage.tsx`, `HistoryPage.tsx`, `GoalsPage.tsx` — Removed redundant padding (DashboardLayout provides container), semantic colors, font-data/font-display
 
 ---
 

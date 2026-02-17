@@ -110,7 +110,7 @@ export function GoalsPage() {
   if (!goal?.raceDate) {
     return (
       <DashboardLayout>
-        <div className="p-6 lg:p-8 flex items-center justify-center min-h-[60vh]">
+        <div className="flex items-center justify-center min-h-[60vh]">
           <div className="text-center">
             <Target className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
             <h2 className="font-display text-2xl font-bold mb-2">No Race Goal Set</h2>
@@ -150,7 +150,7 @@ export function GoalsPage() {
 
   return (
     <DashboardLayout>
-      <div className="p-6 lg:p-8 space-y-6">
+      <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="font-display text-2xl lg:text-3xl font-bold">Race Goal</h1>

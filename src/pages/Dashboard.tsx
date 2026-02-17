@@ -52,9 +52,9 @@ function getWorkoutIcon(type: WorkoutType) {
 function getStatusIcon(status: string) {
   switch (status) {
     case 'completed':
-      return <CheckCircle2 className="w-4 h-4 text-green-500" />;
+      return <CheckCircle2 className="w-4 h-4 text-success" />;
     case 'skipped':
-      return <XCircle className="w-4 h-4 text-red-500" />;
+      return <XCircle className="w-4 h-4 text-destructive" />;
     default:
       return <Circle className="w-4 h-4 text-muted-foreground" />;
   }
@@ -182,7 +182,7 @@ export default function Dashboard() {
 
   return (
     <DashboardLayout>
-      <div className="container mx-auto px-4 py-6 max-w-4xl">
+      <div className="space-y-6">
         {/* Error Banner */}
         {error && (
           <div className="mb-6 p-4 bg-destructive/10 border border-destructive/20 rounded-lg flex items-center justify-between">
@@ -197,38 +197,38 @@ export default function Dashboard() {
         )}
 
         {/* Header */}
-        <div className="mb-6">
+        <div className="hero-gradient rounded-2xl p-6">
           <div className="flex items-center justify-between mb-2">
-            <h1 className="text-2xl font-bold">
+            <h1 className="font-display text-2xl font-bold">
               Week {currentWeek.weekNumber} of {plan.totalWeeks}
             </h1>
-            <Badge variant={currentWeek.isRecoveryWeek ? 'secondary' : 'default'}>
+            <span className="phase-badge phase-build">
               {currentWeek.phase}
-            </Badge>
+            </span>
           </div>
           <p className="text-muted-foreground">{currentWeek.theme}</p>
           <p className="text-sm text-muted-foreground mt-1">
-            {weeksUntilRace} weeks until {plan.raceName}
+            <span className="font-data">{weeksUntilRace}</span> weeks until {plan.raceName}
           </p>
         </div>
 
         {/* Week Progress */}
-        <Card className="mb-6">
+        <Card className="card-base">
           <CardContent className="pt-6">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium">Week Progress</span>
-              <span className="text-sm text-muted-foreground">
+              <span className="text-sm font-display font-semibold">Week Progress</span>
+              <span className="text-sm text-muted-foreground font-data">
                 {completedWorkouts}/{totalWorkouts} workouts
               </span>
             </div>
             <Progress value={completionRate} className="h-2" />
             <div className="flex items-center justify-between mt-4">
               <div>
-                <div className="text-2xl font-bold">{currentWeek.totalPlannedHours}h</div>
+                <div className="text-2xl font-display font-bold font-data">{currentWeek.totalPlannedHours}h</div>
                 <div className="text-xs text-muted-foreground">Planned this week</div>
               </div>
               <div className="text-right">
-                <div className="text-2xl font-bold">{completionRate}%</div>
+                <div className="text-2xl font-display font-bold font-data">{completionRate}%</div>
                 <div className="text-xs text-muted-foreground">Completed</div>
               </div>
             </div>
@@ -237,10 +237,10 @@ export default function Dashboard() {
 
         {/* Today's Workout */}
         {todaysWorkout && (
-          <Card className="mb-6 border-primary/50">
+          <Card className="card-elevated border-primary/30 shadow-glow">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-lg flex items-center gap-2">
+                <CardTitle className="text-lg font-display flex items-center gap-2">
                   {getWorkoutIcon(todaysWorkout.type)}
                   Today's Workout
                 </CardTitle>
@@ -258,14 +258,14 @@ export default function Dashboard() {
               </div>
             </CardHeader>
             <CardContent>
-              <h3 className="font-semibold text-lg mb-2">{todaysWorkout.name}</h3>
+              <h3 className="font-display font-semibold text-lg mb-2">{todaysWorkout.name}</h3>
               <div className="flex items-center gap-4 text-sm text-muted-foreground mb-3">
-                <span className="flex items-center gap-1">
+                <span className="flex items-center gap-1 font-data">
                   <Clock className="w-4 h-4" />
                   {todaysWorkout.duration}min
                 </span>
                 {todaysWorkout.distance && (
-                  <span className="flex items-center gap-1">
+                  <span className="flex items-center gap-1 font-data">
                     <MapPin className="w-4 h-4" />
                     {todaysWorkout.distance}km
                   </span>
@@ -283,7 +283,7 @@ export default function Dashboard() {
               {/* Coaching Tips */}
               {todaysWorkout.coachingTips && todaysWorkout.coachingTips.length > 0 && (
                 <div className="mb-4">
-                  <h4 className="text-sm font-medium mb-2">💡 Coaching Tips</h4>
+                  <h4 className="text-sm font-display font-medium mb-2">💡 Coaching Tips</h4>
                   <ul className="text-sm text-muted-foreground space-y-1">
                     {todaysWorkout.coachingTips.map((tip, index) => (
                       <li key={index} className="flex items-start gap-2">
@@ -429,7 +429,7 @@ function WorkoutListItem({ workout, onClick }: WorkoutListItemProps) {
       <div className="flex items-center gap-3">
         {getWorkoutIcon(workout.type)}
         <div className="text-left">
-          <div className="font-medium flex items-center gap-2">
+          <div className="font-display font-medium flex items-center gap-2">
             {workout.name}
             {isWorkoutToday && (
               <Badge variant="outline" className="text-xs">
@@ -440,11 +440,11 @@ function WorkoutListItem({ workout, onClick }: WorkoutListItemProps) {
           <div className="text-sm text-muted-foreground flex items-center gap-2">
             <span>{formatDate(workout.date)}</span>
             <span>•</span>
-            <span>{workout.duration}min</span>
+            <span className="font-data">{workout.duration}min</span>
             {workout.distance && (
               <>
                 <span>•</span>
-                <span>{workout.distance}km</span>
+                <span className="font-data">{workout.distance}km</span>
               </>
             )}
           </div>

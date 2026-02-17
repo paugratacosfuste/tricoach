@@ -20,7 +20,7 @@ export function ProgressPage() {
     const runDistance = week.workouts
       .filter(w => w.type === 'run')
       .reduce((sum, w) => sum + (w.distance || 0), 0);
-    
+
     return {
       name: `Week ${week.weekNumber}`,
       completed,
@@ -32,10 +32,10 @@ export function ProgressPage() {
   });
 
   // Calculate overall stats
-  const totalWorkouts = allWeeks.reduce((sum, week) => 
+  const totalWorkouts = allWeeks.reduce((sum, week) =>
     sum + week.workouts.filter(w => w.type !== 'rest').length, 0
   );
-  const completedWorkouts = allWeeks.reduce((sum, week) => 
+  const completedWorkouts = allWeeks.reduce((sum, week) =>
     sum + week.workouts.filter(w => w.status === 'completed').length, 0
   );
   const overallProgress = totalWorkouts > 0 ? (completedWorkouts / totalWorkouts) * 100 : 0;
@@ -46,12 +46,12 @@ export function ProgressPage() {
     let streak = 0;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
+
     // Sort workouts by date descending
     const sortedWorkouts = [...currentWeek.workouts]
       .filter(w => w.type !== 'rest')
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    
+
     for (const workout of sortedWorkouts) {
       const workoutDate = new Date(workout.date);
       workoutDate.setHours(0, 0, 0, 0);
@@ -69,7 +69,7 @@ export function ProgressPage() {
 
   return (
     <DashboardLayout>
-      <div className="p-6 lg:p-8 space-y-6">
+      <div className="space-y-6">
         <div>
           <h1 className="font-display text-2xl lg:text-3xl font-bold">Progress & Analytics</h1>
           <p className="text-muted-foreground mt-1">
@@ -131,14 +131,14 @@ export function ProgressPage() {
               <div className="h-64">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={weeklyData}>
-                    <XAxis 
-                      dataKey="name" 
-                      axisLine={false} 
+                    <XAxis
+                      dataKey="name"
+                      axisLine={false}
                       tickLine={false}
                       tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
                     />
-                    <YAxis 
-                      axisLine={false} 
+                    <YAxis
+                      axisLine={false}
                       tickLine={false}
                       tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
                       domain={[0, 100]}
@@ -152,9 +152,9 @@ export function ProgressPage() {
                       }}
                       labelStyle={{ color: 'hsl(var(--foreground))' }}
                     />
-                    <Bar 
-                      dataKey="completionRate" 
-                      fill="hsl(var(--primary))" 
+                    <Bar
+                      dataKey="completionRate"
+                      fill="hsl(var(--primary))"
                       radius={[4, 4, 0, 0]}
                       name="Completion %"
                     />
@@ -169,14 +169,14 @@ export function ProgressPage() {
               <div className="h-64">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={weeklyData}>
-                    <XAxis 
-                      dataKey="name" 
-                      axisLine={false} 
+                    <XAxis
+                      dataKey="name"
+                      axisLine={false}
                       tickLine={false}
                       tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
                     />
-                    <YAxis 
-                      axisLine={false} 
+                    <YAxis
+                      axisLine={false}
                       tickLine={false}
                       tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
                     />
@@ -188,10 +188,10 @@ export function ProgressPage() {
                       }}
                       labelStyle={{ color: 'hsl(var(--foreground))' }}
                     />
-                    <Line 
-                      type="monotone" 
-                      dataKey="hours" 
-                      stroke="hsl(var(--primary))" 
+                    <Line
+                      type="monotone"
+                      dataKey="hours"
+                      stroke="hsl(var(--primary))"
                       strokeWidth={3}
                       dot={{ fill: 'hsl(var(--primary))', strokeWidth: 2 }}
                       name="Hours"
