@@ -1,9 +1,11 @@
+import { useState } from 'react';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { useOnboarding } from '@/contexts/OnboardingContext';
+import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { User, Activity, Target, Heart, Gauge } from 'lucide-react';
+import { User, Activity, Target, Heart, Gauge, Save, Loader2, CheckCircle2 } from 'lucide-react';
 
 const fitnessLevelLabels: Record<string, string> = {
   'beginner': 'Beginner',
@@ -21,6 +23,43 @@ const swimLevelLabels: Record<string, string> = {
 
 export function ProfilePage() {
   const { data, updateProfile, updateFitness } = useOnboarding();
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    setSaveSuccess(false);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          first_name: data.profile?.firstName || null,
+          age: data.profile?.age || null,
+          gender: data.profile?.gender || null,
+          weight: data.profile?.weight || null,
+          height: data.profile?.height || null,
+          fitness_level: data.fitness?.fitnessLevel || null,
+          lthr: data.fitness?.lthr || null,
+          threshold_pace: data.fitness?.thresholdPace || null,
+          max_hr: data.fitness?.maxHR || null,
+          ftp: data.fitness?.ftp || null,
+          swim_level: data.fitness?.swimLevel || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', user.id);
+
+      if (error) throw error;
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+    } catch (err) {
+      console.error('Failed to save profile:', err);
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   return (
     <DashboardLayout>
@@ -190,8 +229,27 @@ export function ProfilePage() {
             </div>
           </div>
 
-          <Button className="mt-6 bg-hero-gradient hover:opacity-90">
-            Save Changes
+          <Button
+            className="mt-6 bg-hero-gradient hover:opacity-90"
+            onClick={handleSave}
+            disabled={isSaving}
+          >
+            {isSaving ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Saving...
+              </>
+            ) : saveSuccess ? (
+              <>
+                <CheckCircle2 className="w-4 h-4 mr-2" />
+                Saved!
+              </>
+            ) : (
+              <>
+                <Save className="w-4 h-4 mr-2" />
+                Save Changes
+              </>
+            )}
           </Button>
         </div>
       </div>

@@ -1,8 +1,14 @@
+import { useState } from 'react';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { useOnboarding } from '@/contexts/OnboardingContext';
+import { useTraining } from '@/contexts/TrainingContext';
+import { supabase } from '@/lib/supabase';
 import { format, differenceInWeeks, differenceInDays } from 'date-fns';
-import { Target, Calendar, Trophy, Clock, MapPin, TrendingUp } from 'lucide-react';
+import { Target, Calendar, Trophy, Clock, MapPin, TrendingUp, Edit3, Save, X, Loader2, CheckCircle2 } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 const raceTypeLabels: Record<string, string> = {
   'marathon': 'Marathon',
@@ -12,6 +18,21 @@ const raceTypeLabels: Record<string, string> = {
   '70.3-ironman': 'Ironman 70.3',
   'full-ironman': 'Ironman',
 };
+
+const raceTypeOptions = [
+  { value: 'marathon', label: 'Marathon' },
+  { value: 'half-marathon', label: 'Half Marathon' },
+  { value: 'sprint-triathlon', label: 'Sprint Triathlon' },
+  { value: 'olympic-triathlon', label: 'Olympic Triathlon' },
+  { value: '70.3-ironman', label: 'Ironman 70.3' },
+  { value: 'full-ironman', label: 'Ironman' },
+];
+
+const priorityOptions = [
+  { value: 'finish', label: 'Finish Strong' },
+  { value: 'pb', label: 'Personal Best' },
+  { value: 'podium', label: 'Podium Finish' },
+];
 
 const raceDistances: Record<string, { swim?: string; bike?: string; run: string }> = {
   'marathon': { run: '42.195km' },
@@ -23,8 +44,68 @@ const raceDistances: Record<string, { swim?: string; bike?: string; run: string 
 };
 
 export function GoalsPage() {
-  const { data } = useOnboarding();
+  const { data, updateGoal } = useOnboarding();
+  const { plan } = useTraining();
   const goal = data.goal;
+
+  const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+
+  // Edit form state
+  const [editRaceName, setEditRaceName] = useState(goal?.raceName || '');
+  const [editRaceType, setEditRaceType] = useState(goal?.raceType || '');
+  const [editRaceDate, setEditRaceDate] = useState(
+    goal?.raceDate ? new Date(goal.raceDate).toISOString().split('T')[0] : ''
+  );
+  const [editGoalTime, setEditGoalTime] = useState(goal?.goalTime || '');
+  const [editPriority, setEditPriority] = useState(goal?.priority || 'finish');
+
+  const handleStartEdit = () => {
+    setEditRaceName(goal?.raceName || '');
+    setEditRaceType(goal?.raceType || '');
+    setEditRaceDate(goal?.raceDate ? new Date(goal.raceDate).toISOString().split('T')[0] : '');
+    setEditGoalTime(goal?.goalTime || '');
+    setEditPriority(goal?.priority || 'finish');
+    setIsEditing(true);
+  };
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    setSaveSuccess(false);
+    try {
+      // Update context
+      updateGoal({
+        raceName: editRaceName,
+        raceType: editRaceType as any,
+        raceDate: new Date(editRaceDate),
+        goalTime: editGoalTime || undefined,
+        priority: editPriority as any,
+      });
+
+      // Update Supabase training plan
+      if (plan?.id) {
+        await supabase
+          .from('training_plans')
+          .update({
+            race_name: editRaceName,
+            race_type: editRaceType,
+            race_date: editRaceDate,
+            goal_time: editGoalTime || null,
+            goal_priority: editPriority,
+          })
+          .eq('id', plan.id);
+      }
+
+      setIsEditing(false);
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+    } catch (err) {
+      console.error('Failed to save goal:', err);
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   if (!goal?.raceDate) {
     return (
@@ -70,12 +151,95 @@ export function GoalsPage() {
   return (
     <DashboardLayout>
       <div className="p-6 lg:p-8 space-y-6">
-        <div>
-          <h1 className="font-display text-2xl lg:text-3xl font-bold">Race Goal</h1>
-          <p className="text-muted-foreground mt-1">
-            Your training journey towards race day
-          </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="font-display text-2xl lg:text-3xl font-bold">Race Goal</h1>
+            <p className="text-muted-foreground mt-1">
+              Your training journey towards race day
+            </p>
+          </div>
+          {!isEditing && (
+            <Button variant="outline" onClick={handleStartEdit}>
+              <Edit3 className="w-4 h-4 mr-2" />
+              Edit Goal
+            </Button>
+          )}
+          {saveSuccess && (
+            <span className="text-sm text-green-500 flex items-center gap-1">
+              <CheckCircle2 className="w-4 h-4" /> Saved!
+            </span>
+          )}
         </div>
+
+        {/* Edit Form */}
+        {isEditing && (
+          <div className="bg-card rounded-2xl border-2 border-primary/30 p-6 space-y-4">
+            <h3 className="font-semibold text-primary flex items-center gap-2">
+              <Edit3 className="w-4 h-4" />
+              Edit Race Goal
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Race Name</Label>
+                <Input
+                  value={editRaceName}
+                  onChange={(e) => setEditRaceName(e.target.value)}
+                  placeholder="e.g. Barcelona Marathon 2026"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Race Type</Label>
+                <select
+                  value={editRaceType}
+                  onChange={(e) => setEditRaceType(e.target.value)}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
+                >
+                  {raceTypeOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label>Race Date</Label>
+                <Input
+                  type="date"
+                  value={editRaceDate}
+                  onChange={(e) => setEditRaceDate(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Goal Time (optional)</Label>
+                <Input
+                  value={editGoalTime}
+                  onChange={(e) => setEditGoalTime(e.target.value)}
+                  placeholder="e.g. 3:30:00"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Priority</Label>
+                <select
+                  value={editPriority}
+                  onChange={(e) => setEditPriority(e.target.value)}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
+                >
+                  {priorityOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-3 pt-2">
+              <Button onClick={handleSave} disabled={isSaving}>
+                {isSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+                Save Changes
+              </Button>
+              <Button variant="ghost" onClick={() => setIsEditing(false)}>
+                <X className="w-4 h-4 mr-2" />
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
 
         {/* Race Card */}
         <div className="bg-gradient-to-br from-primary/20 via-primary/10 to-transparent rounded-3xl border border-primary/30 p-8">
@@ -92,7 +256,7 @@ export function GoalsPage() {
                   </h2>
                 </div>
               </div>
-              
+
               <div className="flex flex-wrap gap-4 mt-4 text-sm">
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <Calendar className="w-4 h-4" />
@@ -158,7 +322,7 @@ export function GoalsPage() {
             {phases.map((phase, index) => {
               const isActive = index === currentPhaseIndex;
               const isPast = index > currentPhaseIndex;
-              
+
               return (
                 <div
                   key={phase.name}
@@ -200,13 +364,12 @@ export function GoalsPage() {
               <span className="text-muted-foreground">Training Started</span>
               <span className="text-muted-foreground">Race Day</span>
             </div>
-            <Progress 
-              value={100 - (daysOut / 120) * 100} 
-              className="h-3" 
-              indicatorClassName="bg-hero-gradient"
+            <Progress
+              value={Math.max(0, Math.min(100, 100 - (daysOut / 120) * 100))}
+              className="h-3"
             />
             <p className="text-center text-sm text-muted-foreground mt-2">
-              {Math.round(100 - (daysOut / 120) * 100)}% of your training journey complete
+              {Math.max(0, Math.round(100 - (daysOut / 120) * 100))}% of your training journey complete
             </p>
           </div>
         </div>

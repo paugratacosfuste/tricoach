@@ -1,17 +1,44 @@
+import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { useOnboarding } from '@/contexts/OnboardingContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { useTraining } from '@/contexts/TrainingContext';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Calendar, Activity, Bell, Heart, RefreshCw, Trash2, LogOut } from 'lucide-react';
 
+// Settings keys for localStorage
+const SETTINGS_KEYS = {
+  WORKOUT_REMINDERS: 'tricoach-setting-workout-reminders',
+  WEEKLY_SUMMARY: 'tricoach-setting-weekly-summary',
+};
+
 export function SettingsPage() {
   const { data, updateIntegrations } = useOnboarding();
   const { signOut, user } = useAuth();
+  const { resetPlan } = useTraining();
+
+  // Persisted notification settings
+  const [workoutReminders, setWorkoutReminders] = useState(() =>
+    localStorage.getItem(SETTINGS_KEYS.WORKOUT_REMINDERS) !== 'false'
+  );
+  const [weeklySummary, setWeeklySummary] = useState(() =>
+    localStorage.getItem(SETTINGS_KEYS.WEEKLY_SUMMARY) !== 'false'
+  );
+
+  // Persist when toggled
+  useEffect(() => {
+    localStorage.setItem(SETTINGS_KEYS.WORKOUT_REMINDERS, String(workoutReminders));
+  }, [workoutReminders]);
+
+  useEffect(() => {
+    localStorage.setItem(SETTINGS_KEYS.WEEKLY_SUMMARY, String(weeklySummary));
+  }, [weeklySummary]);
 
   const handleResetOnboarding = () => {
     if (confirm('This will reset all your data and take you back to onboarding. Are you sure?')) {
+      resetPlan();
       localStorage.clear();
       window.location.reload();
     }
@@ -149,7 +176,10 @@ export function SettingsPage() {
                   <p className="text-sm text-muted-foreground">Get notified before your workouts</p>
                 </div>
               </div>
-              <Switch defaultChecked />
+              <Switch
+                checked={workoutReminders}
+                onCheckedChange={setWorkoutReminders}
+              />
             </div>
 
             <div className="flex items-center justify-between">
@@ -160,7 +190,10 @@ export function SettingsPage() {
                   <p className="text-sm text-muted-foreground">Receive a weekly training recap</p>
                 </div>
               </div>
-              <Switch defaultChecked />
+              <Switch
+                checked={weeklySummary}
+                onCheckedChange={setWeeklySummary}
+              />
             </div>
           </div>
         </section>
