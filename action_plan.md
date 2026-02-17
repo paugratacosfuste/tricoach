@@ -6,9 +6,9 @@
 
 ---
 
-## Phase 1: Foundation & Security
+## Phase 1: Foundation & Security ✅ DONE
 
-### 1.1 Vercel API Route Proxy for Claude
+### 1.1 Vercel API Route Proxy for Claude ✅
 
 **Goal:** Move the Claude API key to a server-side Vercel function so it's never exposed in the client bundle.
 
@@ -98,7 +98,7 @@ const response = await fetch('/api/generate-week', {
 
 ---
 
-### 1.2 Supabase Database
+### 1.2 Supabase Database ✅
 
 **Goal:** Persist all data in Supabase instead of localStorage.
 
@@ -288,7 +288,7 @@ VITE_SUPABASE_ANON_KEY=your-anon-key
 
 ---
 
-### 1.3 Authentication (Supabase Auth)
+### 1.3 Authentication (Supabase Auth) ✅
 
 **Goal:** Email/password signup with email confirmation.
 
@@ -368,7 +368,7 @@ VITE_SUPABASE_ANON_KEY=your-anon-key
 
 ---
 
-### 1.4 Cleanup
+### 1.4 Cleanup ✅
 
 #### Files to Modify/Delete
 

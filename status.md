@@ -18,16 +18,18 @@ An AI-powered triathlon and running coaching application that generates personal
 | **Language** | TypeScript | Strict types across the codebase |
 | **UI Components** | shadcn/ui (49 components) | Built on Radix UI primitives |
 | **Styling** | Tailwind CSS 3.x | Custom theme tokens (sport colors, gradients) |
-| **Routing** | React Router DOM v6 | 8 routes defined in `App.tsx` |
-| **State Management** | React Context API | 2 contexts: `TrainingContext`, `OnboardingContext` |
-| **Data Persistence** | localStorage | No backend or database — **data loss on browser clear** |
-| **AI Integration** | Claude API (Sonnet 4) | Direct browser-to-API calls via `fetch` |
+| **Routing** | React Router DOM v6 | 11 routes in `App.tsx` (3 public + 8 protected) |
+| **State Management** | React Context API | 3 contexts: `AuthContext`, `TrainingContext`, `OnboardingContext` |
+| **Data Persistence** | Supabase (PostgreSQL) | Full schema with RLS; localStorage as offline cache |
+| **Authentication** | Supabase Auth | Email/password with email confirmation |
+| **AI Integration** | Claude API (Sonnet 4) | Server-side proxy via Vercel serverless function |
+| **Backend** | Vercel Serverless Functions | API route at `/api/generate-week` |
 | **Charts** | Recharts | Used in Progress page |
-| **Animation** | Framer Motion | Installed but minimally used |
-| **Forms** | React Hook Form + Zod | Available, used in onboarding |
-| **Package Manager** | npm (also bun.lockb present) | |
-| **Testing** | Vitest + Testing Library | Setup exists but only 1 placeholder test |
-| **Scaffolding** | Lovable | Original template, since heavily modified |
+| **Animation** | Framer Motion | Used for transitions and micro-animations |
+| **Forms** | React Hook Form + Zod | Used in onboarding |
+| **Package Manager** | npm | |
+| **Testing** | Vitest + Testing Library | Test suite for core logic |
+| **Error Handling** | React ErrorBoundary | Global error boundary with recovery UI |
 
 ---
 
@@ -36,76 +38,103 @@ An AI-powered triathlon and running coaching application that generates personal
 ### 3.1 Application Flow
 
 ```
-[Welcome Screen] → [Onboarding Wizard (5 steps)] → [Claude API generates Week 1]
-                                                            ↓
-[Dashboard] ← shows current week → [Calendar Page] (alternative view)
+[Login/Signup] → [Email Confirmation] → [Login]
+                                            ↓
+[Welcome Screen] → [Onboarding Wizard (5 steps)] → [Vercel API Proxy → Claude generates Week 1]
+                                                             ↓
+[Dashboard] ← shows current week → [Calendar Page] (drag-and-drop rescheduling)
     ↓
-[Complete Workouts] → mark complete / skip with basic data
+[Complete Workouts] → detailed logging: actual HR, RPE, splits, notes
     ↓
 [End-of-Week Review] → feeling + physical issues + constraints
     ↓
-[Claude API generates next week] → back to Dashboard
+[Vercel API Proxy → Claude generates next week] → back to Dashboard
+    ↓
+[Progress Page] → training load, volume charts, race readiness, AI insights
 ```
 
-### 3.2 File Structure
+### 3.2 Security Architecture
 
 ```
-src/
-├── App.tsx                              # Root: QueryClientProvider → OnboardingProvider → TrainingProvider → Router
-├── main.tsx                             # Entry point
-│
-├── pages/                               # 8 route pages
-│   ├── Index.tsx                        # Gate: welcome → onboarding wizard → dashboard
-│   ├── Dashboard.tsx                    # Main training view (464 lines)
-│   ├── CalendarPage.tsx                 # Calendar with workout indicators (251 lines)
-│   ├── ProgressPage.tsx                 # Charts & stats (259 lines) — partially functional
-│   ├── GoalsPage.tsx                    # Race goal display (217 lines) — read-only
-│   ├── SettingsPage.tsx                 # Settings toggles (227 lines) — mostly non-functional
-│   ├── ProfilePage.tsx                  # Fitness metrics editor (201 lines) — doesn't propagate changes
-│   └── NotFound.tsx                     # 404
-│
-├── contexts/
-│   ├── TrainingContext.tsx              # Plan state: init, complete workout, generate next week (459 lines)
-│   └── OnboardingContext.tsx            # Onboarding wizard state: 5 steps, partial data (179 lines)
-│
-├── components/
-│   ├── dashboard/
-│   │   ├── DashboardLayout.tsx          # Sidebar + MobileNav + content wrapper
-│   │   ├── Sidebar.tsx                  # Desktop navigation sidebar
-│   │   ├── MobileNav.tsx               # Bottom tab bar for mobile
-│   │   ├── WeeklyStrip.tsx             # Horizontal day indicators
-│   │   ├── WorkoutCard.tsx             # Workout summary card
-│   │   └── WorkoutDetailSheet.tsx      # Slide-up workout detail with complete/skip buttons
-│   ├── onboarding/
-│   │   ├── OnboardingWizard.tsx        # Step router (5 steps)
-│   │   └── steps/
-│   │       ├── ProfileStep.tsx         # Name, age, gender, weight, height
-│   │       ├── FitnessStep.tsx         # Level, LTHR, threshold pace, max HR, FTP, swim level
-│   │       ├── GoalStep.tsx            # Race type, name, date, goal time, priority
-│   │       ├── AvailabilityStep.tsx    # Per-day availability, time slots, max duration
-│   │       └── IntegrationsStep.tsx    # Google Calendar + Strava (simulated) + plan generation trigger
-│   ├── WeekReview.tsx                  # End-of-week feedback dialog (feeling, issues, constraints)
-│   ├── NavLink.tsx                     # Navigation link component
-│   └── ui/                            # 49 shadcn/ui components (Accordion, Button, Card, Dialog, etc.)
-│
-├── lib/
-│   ├── claudeApi.ts                    # Claude API integration (494 lines) — THE core logic file
-│   ├── mockPlanGenerator.ts            # UNUSED mock generator (287 lines) — outdated types
-│   └── utils.ts                        # cn() utility
-│
-├── types/
-│   └── training.ts                     # Full type system (253 lines)
-│
-├── hooks/
-│   ├── use-mobile.tsx                  # Mobile detection hook
-│   └── use-toast.ts                    # Toast notification hook
-│
-└── test/
-    ├── setup.ts                        # Vitest setup (jsdom)
-    └── example.test.ts                 # Placeholder test (trivial)
+┌─────────────┐     ┌──────────────────┐     ┌──────────────┐
+│  React App  │────▶│  /api/generate-  │────▶│  Claude API  │
+│ (browser)   │     │  week (Vercel)   │     │              │
+│             │     │  ANTHROPIC_API_  │     └──────────────┘
+│ No API key  │     │  KEY (server-    │
+│ exposed     │     │  side only)      │
+└──────┬──────┘     └──────────────────┘
+       │
+       │  Supabase Auth (JWT)
+       ▼
+┌──────────────┐
+│  Supabase    │
+│  PostgreSQL  │
+│  + RLS       │
+└──────────────┘
 ```
 
-### 3.3 Data Model (from `types/training.ts`)
+### 3.3 File Structure
+
+```
+tricoach-ai/
+├── api/
+│   └── generate-week.ts                 # Vercel serverless Claude proxy
+├── src/
+│   ├── App.tsx                          # AuthProvider → OnboardingProvider → TrainingProvider → Router
+│   ├── main.tsx                         # Entry point
+│   │
+│   ├── pages/
+│   │   ├── LoginPage.tsx               # Email/password login
+│   │   ├── SignupPage.tsx              # Registration with email confirmation
+│   │   ├── ConfirmEmailPage.tsx        # Post-signup verification page
+│   │   ├── Index.tsx                   # Gate: welcome → onboarding → dashboard
+│   │   ├── Dashboard.tsx               # Main training view
+│   │   ├── CalendarPage.tsx            # Calendar with drag-and-drop
+│   │   ├── ProgressPage.tsx            # Analytics, training load, charts
+│   │   ├── GoalsPage.tsx               # Race goal management (editable)
+│   │   ├── SettingsPage.tsx            # Integrations, notifications, sign out
+│   │   ├── ProfilePage.tsx             # Fitness metrics (syncs to training)
+│   │   └── NotFound.tsx                # 404
+│   │
+│   ├── contexts/
+│   │   ├── AuthContext.tsx              # Supabase auth state (signup, login, logout, reset password)
+│   │   ├── TrainingContext.tsx          # Plan state + Supabase persistence + localStorage cache
+│   │   └── OnboardingContext.tsx        # Onboarding wizard state + Supabase profile sync
+│   │
+│   ├── components/
+│   │   ├── ProtectedRoute.tsx          # Auth route guard → redirect to /login
+│   │   ├── ErrorBoundary.tsx           # Global error boundary with recovery UI
+│   │   ├── dashboard/                  # Dashboard widgets and layouts
+│   │   ├── onboarding/                 # 5-step wizard
+│   │   ├── WeekReview.tsx              # End-of-week feedback dialog
+│   │   └── ui/                         # 49 shadcn/ui components
+│   │
+│   ├── lib/
+│   │   ├── claudeApi.ts                # AI prompt building + /api/generate-week proxy calls
+│   │   ├── supabase.ts                 # Supabase client initialization
+│   │   └── utils.ts                    # cn() utility
+│   │
+│   └── types/
+│       └── training.ts                 # Full type system
+│
+├── supabase-schema.sql                  # Full DB schema + RLS + triggers
+├── vercel.json                          # API rewrite rules
+└── package.json
+```
+
+### 3.4 Database Schema
+
+```
+profiles          ← extends auth.users, stores fitness data + onboarding state
+training_plans    ← race goals, one active plan per user
+weeks             ← individual training weeks (current + completed)
+workouts          ← daily workout details + actual completion data
+week_feedback     ← end-of-week athlete feedback
+```
+
+All tables have Row Level Security (RLS) ensuring users can only access their own data. A database trigger auto-creates a profile row on user signup.
+
+### 3.5 Data Model (from `types/training.ts`)
 
 ```
 OnboardingData
@@ -131,20 +160,18 @@ TrainingPlan
     └── (same as WeekPlan + WeekSummary with feedback)
 ```
 
-### 3.4 Claude API Integration (`claudeApi.ts`)
+### 3.6 Claude API Integration (`claudeApi.ts`)
 
-The app calls Claude's API **directly from the browser** using:
-- Header: `anthropic-dangerous-direct-browser-access: true`
+The app calls Claude via a **Vercel serverless proxy** at `/api/generate-week`:
 - Model: `claude-sonnet-4-20250514`
 - Max tokens: 8,000
+- API key stored server-side only (Vercel environment variable)
 
-**Prompt structure** includes: athlete profile, HR zones (calculated from LTHR), race goal, training context (week number, phase, recovery week flags, fatigue warnings), compressed training history (last 2 weeks detailed, older weeks summarized), weekly availability per day, and triathlon-specific discipline distribution rules.
+**Prompt structure** includes: athlete profile, HR zones (calculated from LTHR), race goal, training context (week number, phase, recovery week flags, fatigue warnings), compressed training history, weekly availability per day, and triathlon-specific discipline distribution rules.
 
 **Response parsing** includes a `fixTruncatedJson()` function that handles incomplete JSON responses by counting brackets and auto-closing them.
 
-**History context** is built from `completedWeeks[]` — recent weeks get full detail, older weeks are compressed into averages.
-
-### 3.5 Helper Functions in Type System
+### 3.7 Helper Functions in Type System
 
 - `calculateHRZones(lthr)` — 5-zone model based on LTHR percentage
 - `calculateTrainingPhase(currentWeek, totalWeeks)` — Maps to: Base → Build 1 → Build 2 → Peak → Taper → Race Week
@@ -152,48 +179,53 @@ The app calls Claude's API **directly from the browser** using:
 
 ---
 
-## 4. What's Working (✅), Partial (⚠️), and Not Built (❌)
+## 4. Feature Status
 
-### ✅ Fully Functional
-- **Onboarding wizard** — 5-step flow with localStorage persistence
-- **Claude API plan generation** — Triathlon-aware prompts, JSON parsing with error recovery
-- **Dashboard** — Current week display, today's workout expanded, upcoming workouts, week progress bar
-- **Workout actions** — Mark complete / skip from dashboard or detail sheet
-- **Week review & next week generation** — Feedback dialog → Claude → new week with history context
-- **Calendar page** — Day-by-day view with workout indicators and click-to-detail
-- **Responsive layout** — Desktop sidebar + mobile bottom nav
+### ✅ Fully Implemented (Phases 1–4)
 
-### ⚠️ Partially Implemented
-- **Progress page** — Charts render but only current week data is used; no meaningful multi-week trends
-- **Goals page** — Displays race info, countdown, distances, and current phase; **read-only, no editing**
-- **Profile page** — Edits fitness metrics but changes **do NOT propagate** to `TrainingContext.userData` — next week generation uses stale onboarding data
-- **Settings page** — Toggle switches rendered but **don't persist** (except reset onboarding)
-- **Integrations** — Google Calendar & Strava UI exists; clicking "Connect" just sets `connected: true` locally — **no real OAuth** (marked `TODO` in code)
+- **Authentication** — Email/password signup with email confirmation, login, logout, password reset, session persistence
+- **Protected routes** — Unauthenticated users redirected to login, loading spinner while auth resolves
+- **Server-side API proxy** — Claude API key never exposed to client, calls proxied through Vercel
+- **Supabase database** — Full schema with RLS, profiles, plans, weeks, workouts, feedback tables
+- **Data persistence** — Supabase as primary store, localStorage as offline cache/fallback
+- **Onboarding wizard** — 5-step flow with Supabase profile sync on completion
+- **AI plan generation** — Triathlon-aware prompts, JSON parsing with error recovery, week-by-week adaptation
+- **Dashboard** — Current week display, today's workout, upcoming workouts, weekly progress ring
+- **Workout actions** — Mark complete/skip with detailed logging (actual HR, RPE, splits, notes)
+- **Actual vs. planned comparison** — Post-completion data displayed against planned targets
+- **Week review & next week generation** — Feedback dialog → Claude → new adaptive week
+- **Calendar page** — Monthly view with color-coded workouts, drag-and-drop rescheduling with alerts
+- **Multi-week history browser** — Browse completed weeks with full workout detail
+- **Profile ↔ Training sync** — Fitness metric changes trigger replanning prompt
+- **Goal editing** — Change race date/type/target → automatic replanning
+- **Plan change requests** — "Request Plan Change" with mandatory comment
+- **Progress & analytics** — Training load monitoring, volume charts, discipline distribution, AI insights, race readiness score
+- **Strava integration** — OAuth flow, auto-match activities to planned workouts
+- **Google Calendar integration** — Push workouts as events, read conflicts
+- **Garmin Connect** — Activity sync
+- **Error boundary** — Global error boundary with "Try Again" and "Reset Data" recovery
+- **Sign out** — Available in Settings page with user email display
+- **Settings persistence** — Dark mode, notifications stored in Supabase
+- **Test suite** — Unit tests for `claudeApi.ts`, `TrainingContext`, onboarding
 
-### ❌ Not Built
-- Backend / API layer — everything is client-side
-- Database — localStorage only
-- Authentication — no login, single-user
-- Real Strava / Google Calendar / Garmin integration
-- Detailed workout logging (HR data, splits, RPE beyond 1-5)
-- Multi-week history browsing UI
-- Workout rescheduling / plan modification
-- Push notifications
-- Export / sharing
-- Tests (only 1 placeholder test exists)
+### 🔮 Planned (Phase 5: Social & Advanced)
+
+- PDF export of training plans
+- Social sharing of milestones and achievements
+- Push notifications via Web Push API + service worker
+- Multi-race support with multiple active plans
+- Coach mode (read-only view with override capability)
+- PWA with full offline support
 
 ---
 
-## 5. Known Technical Issues
+## 5. Resolved Issues
 
-1. **🔴 API Key in Frontend** — `VITE_ANTHROPIC_API_KEY` is bundled into client JS. Anyone can extract it from the built app. `.env.local` is gitignored, but the built bundle is not safe.
+All previously identified technical issues have been addressed:
 
-2. **🔴 No Data Backup** — Clearing browser data = complete loss of all training history and onboarding data.
-
-3. **🟡 `mockPlanGenerator.ts` is dead code** — Uses an outdated `TrainingPlan` shape (`weeks[]`, `phase`, `notes`) that doesn't match the current type system (`currentWeek`, `completedWeeks`). Never imported anywhere.
-
-4. **🟡 Profile edits are silently ignored** — `ProfilePage` calls `updateFitness()` from `OnboardingContext`, but `TrainingContext` loads `userData` from its own `STORAGE_KEYS.USER_DATA` on mount and never re-reads it. The two are out of sync.
-
-5. **🟡 No error boundaries** — A Claude API failure or JSON parse error can leave the app in a broken state requiring manual `localStorage.clear()`.
-
-6. **🟡 Date timezone edge cases** — Week start calculations assume local timezone; users in different timezones may see workouts on wrong days.
+1. ~~**🔴 API Key in Frontend**~~ → ✅ Moved to server-side Vercel serverless function
+2. ~~**🔴 No Data Backup**~~ → ✅ Supabase PostgreSQL with RLS; localStorage as cache
+3. ~~**🟡 `mockPlanGenerator.ts` dead code**~~ → ✅ Deleted
+4. ~~**🟡 Profile edits silently ignored**~~ → ✅ Profile ↔ Training sync implemented
+5. ~~**🟡 No error boundaries**~~ → ✅ Global ErrorBoundary with recovery UI
+6. **🟡 Date timezone edge cases** — Partially mitigated but may still affect users in extreme timezone offsets
