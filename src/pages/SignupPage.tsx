@@ -44,11 +44,11 @@ export default function SignupPage() {
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 p-4">
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-orange-950 p-4">
             <div className="w-full max-w-md space-y-8">
                 {/* Logo */}
                 <div className="text-center space-y-2">
-                    <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-400 shadow-lg shadow-blue-500/25">
+                    <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-orange-500 to-amber-400 shadow-lg shadow-orange-500/25">
                         <Activity className="w-7 h-7 text-white" />
                     </div>
                     <h1 className="text-3xl font-bold text-white tracking-tight">TriCoach AI</h1>
@@ -80,7 +80,7 @@ export default function SignupPage() {
                                         value={firstName}
                                         onChange={(e) => setFirstName(e.target.value)}
                                         required
-                                        className="pl-10 bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-500 focus:border-blue-500 focus:ring-blue-500/20"
+                                        className="pl-10 bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-500 focus:border-orange-500 focus:ring-orange-500/20"
                                     />
                                 </div>
                             </div>
@@ -95,7 +95,7 @@ export default function SignupPage() {
                                         value={email}
                                         onChange={(e) => setEmail(e.target.value)}
                                         required
-                                        className="pl-10 bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-500 focus:border-blue-500 focus:ring-blue-500/20"
+                                        className="pl-10 bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-500 focus:border-orange-500 focus:ring-orange-500/20"
                                     />
                                 </div>
                             </div>
@@ -111,7 +111,7 @@ export default function SignupPage() {
                                         onChange={(e) => setPassword(e.target.value)}
                                         required
                                         minLength={8}
-                                        className="pl-10 bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-500 focus:border-blue-500 focus:ring-blue-500/20"
+                                        className="pl-10 bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-500 focus:border-orange-500 focus:ring-orange-500/20"
                                     />
                                 </div>
                             </div>
@@ -127,7 +127,7 @@ export default function SignupPage() {
                                         onChange={(e) => setConfirmPassword(e.target.value)}
                                         required
                                         minLength={8}
-                                        className="pl-10 bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-500 focus:border-blue-500 focus:ring-blue-500/20"
+                                        className="pl-10 bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-500 focus:border-orange-500 focus:ring-orange-500/20"
                                     />
                                 </div>
                             </div>
@@ -136,7 +136,7 @@ export default function SignupPage() {
                             <Button
                                 type="submit"
                                 disabled={isLoading}
-                                className="w-full bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white font-medium shadow-lg shadow-blue-500/25 transition-all duration-200"
+                                className="w-full bg-gradient-to-r from-orange-600 to-amber-500 hover:from-orange-500 hover:to-amber-400 text-white font-medium shadow-lg shadow-orange-500/25 transition-all duration-200"
                             >
                                 {isLoading ? (
                                     <>
@@ -149,7 +149,7 @@ export default function SignupPage() {
                             </Button>
                             <p className="text-sm text-slate-400 text-center">
                                 Already have an account?{' '}
-                                <Link to="/login" className="text-blue-400 hover:text-blue-300 font-medium transition-colors">
+                                <Link to="/login" className="text-orange-400 hover:text-orange-300 font-medium transition-colors">
                                     Sign in
                                 </Link>
                             </p>

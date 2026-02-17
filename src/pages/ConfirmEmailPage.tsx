@@ -5,19 +5,19 @@ import { Activity, Mail, ArrowRight } from 'lucide-react';
 
 export default function ConfirmEmailPage() {
     return (
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 p-4">
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-orange-950 p-4">
             <div className="w-full max-w-md space-y-8">
                 {/* Logo */}
                 <div className="text-center space-y-2">
-                    <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-400 shadow-lg shadow-blue-500/25">
+                    <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-orange-500 to-amber-400 shadow-lg shadow-orange-500/25">
                         <Activity className="w-7 h-7 text-white" />
                     </div>
                 </div>
 
                 <Card className="border-slate-800 bg-slate-900/50 backdrop-blur-xl shadow-2xl">
                     <CardHeader className="text-center pb-2">
-                        <div className="mx-auto w-16 h-16 rounded-full bg-blue-500/10 flex items-center justify-center mb-4">
-                            <Mail className="w-8 h-8 text-blue-400" />
+                        <div className="mx-auto w-16 h-16 rounded-full bg-orange-500/10 flex items-center justify-center mb-4">
+                            <Mail className="w-8 h-8 text-orange-400" />
                         </div>
                         <h2 className="text-2xl font-bold text-white">Check your email</h2>
                     </CardHeader>
@@ -33,7 +33,7 @@ export default function ConfirmEmailPage() {
                         <Link to="/login" className="w-full">
                             <Button
                                 variant="default"
-                                className="w-full bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white font-medium"
+                                className="w-full bg-gradient-to-r from-orange-600 to-amber-500 hover:from-orange-500 hover:to-amber-400 text-white font-medium"
                             >
                                 Go to Sign In
                                 <ArrowRight className="ml-2 h-4 w-4" />
