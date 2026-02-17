@@ -7,7 +7,7 @@
 // BASIC TYPES
 // ============================================
 
-export type RaceType = 
+export type RaceType =
   | 'marathon'
   | 'half-marathon'
   | 'olympic-triathlon'
@@ -131,6 +131,7 @@ export interface Workout {
     distance?: number;
     avgHR?: number;
     feeling: 1 | 2 | 3 | 4 | 5;
+    rpe?: number; // 1-10 Rate of Perceived Exertion
     notes?: string;
   };
 }
@@ -199,17 +200,17 @@ export interface CompletedWeek {
 export interface TrainingPlan {
   id: string;
   createdAt: Date;
-  
+
   // Race info
   raceName: string;
   raceDate: Date;
   raceType: RaceType;
   totalWeeks: number;
-  
+
   // Current state
   currentWeekNumber: number;
   currentWeek: WeekPlan | null;
-  
+
   // History
   completedWeeks: CompletedWeek[];
 }
@@ -238,7 +239,7 @@ export function calculateHRZones(lthr: number): HeartRateZones {
 
 export function calculateTrainingPhase(currentWeek: number, totalWeeks: number): string {
   const weeksRemaining = totalWeeks - currentWeek;
-  
+
   if (weeksRemaining <= 1) return 'Race Week';
   if (weeksRemaining <= 3) return 'Taper';
   if (weeksRemaining <= 6) return 'Peak';

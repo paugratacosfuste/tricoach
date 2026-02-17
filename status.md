@@ -28,7 +28,6 @@ An AI-powered triathlon and running coaching application that generates personal
 | **Animation** | Framer Motion | Used for transitions and micro-animations |
 | **Forms** | React Hook Form + Zod | Used in onboarding |
 | **Package Manager** | npm | |
-| **Testing** | Vitest + Testing Library | Test suite for core logic |
 | **Error Handling** | React ErrorBoundary | Global error boundary with recovery UI |
 
 ---
@@ -42,15 +41,13 @@ An AI-powered triathlon and running coaching application that generates personal
                                             ↓
 [Welcome Screen] → [Onboarding Wizard (5 steps)] → [Vercel API Proxy → Claude generates Week 1]
                                                              ↓
-[Dashboard] ← shows current week → [Calendar Page] (drag-and-drop rescheduling)
+[Dashboard] ← shows current week → [Calendar Page]
     ↓
-[Complete Workouts] → detailed logging: actual HR, RPE, splits, notes
+[Complete Workouts] → basic status toggle (complete/skip)
     ↓
 [End-of-Week Review] → feeling + physical issues + constraints
     ↓
 [Vercel API Proxy → Claude generates next week] → back to Dashboard
-    ↓
-[Progress Page] → training load, volume charts, race readiness, AI insights
 ```
 
 ### 3.2 Security Architecture
@@ -84,29 +81,35 @@ tricoach-ai/
 │   ├── main.tsx                         # Entry point
 │   │
 │   ├── pages/
-│   │   ├── LoginPage.tsx               # Email/password login
-│   │   ├── SignupPage.tsx              # Registration with email confirmation
-│   │   ├── ConfirmEmailPage.tsx        # Post-signup verification page
+│   │   ├── LoginPage.tsx               # Email/password login (orange palette)
+│   │   ├── SignupPage.tsx              # Registration with email confirmation (orange palette)
+│   │   ├── ConfirmEmailPage.tsx        # Post-signup verification page (orange palette)
 │   │   ├── Index.tsx                   # Gate: welcome → onboarding → dashboard
-│   │   ├── Dashboard.tsx               # Main training view
-│   │   ├── CalendarPage.tsx            # Calendar with drag-and-drop
-│   │   ├── ProgressPage.tsx            # Analytics, training load, charts
-│   │   ├── GoalsPage.tsx               # Race goal management (editable)
-│   │   ├── SettingsPage.tsx            # Integrations, notifications, sign out
-│   │   ├── ProfilePage.tsx             # Fitness metrics (syncs to training)
+│   │   ├── Dashboard.tsx               # Main training view (current week)
+│   │   ├── CalendarPage.tsx            # Calendar view of workouts (no drag-and-drop yet)
+│   │   ├── ProgressPage.tsx            # Basic analytics with Recharts
+│   │   ├── GoalsPage.tsx               # Race goal display (read-only)
+│   │   ├── SettingsPage.tsx            # Integrations UI (not wired), sign out
+│   │   ├── ProfilePage.tsx             # Fitness metrics display and edit (no Supabase persist)
 │   │   └── NotFound.tsx                # 404
 │   │
 │   ├── contexts/
-│   │   ├── AuthContext.tsx              # Supabase auth state (signup, login, logout, reset password)
+│   │   ├── AuthContext.tsx              # Supabase auth state (signup with dup detection, login, logout)
 │   │   ├── TrainingContext.tsx          # Plan state + Supabase persistence + localStorage cache
 │   │   └── OnboardingContext.tsx        # Onboarding wizard state + Supabase profile sync
 │   │
 │   ├── components/
 │   │   ├── ProtectedRoute.tsx          # Auth route guard → redirect to /login
 │   │   ├── ErrorBoundary.tsx           # Global error boundary with recovery UI
-│   │   ├── dashboard/                  # Dashboard widgets and layouts
-│   │   ├── onboarding/                 # 5-step wizard
 │   │   ├── WeekReview.tsx              # End-of-week feedback dialog
+│   │   ├── dashboard/
+│   │   │   ├── DashboardLayout.tsx     # Layout wrapper
+│   │   │   ├── Sidebar.tsx             # Desktop navigation sidebar
+│   │   │   ├── MobileNav.tsx           # Mobile bottom navigation
+│   │   │   ├── WeeklyStrip.tsx         # Horizontal day strip
+│   │   │   ├── WorkoutCard.tsx         # Workout summary card
+│   │   │   └── WorkoutDetailSheet.tsx  # Workout detail slide-out (no logging form)
+│   │   ├── onboarding/                 # 5-step wizard
 │   │   └── ui/                         # 49 shadcn/ui components
 │   │
 │   ├── lib/
@@ -118,17 +121,17 @@ tricoach-ai/
 │       └── training.ts                 # Full type system
 │
 ├── supabase-schema.sql                  # Full DB schema + RLS + triggers
-├── vercel.json                          # API rewrite rules
+├── vercel.json                          # API rewrite rules + SPA routing
 └── package.json
 ```
 
 ### 3.4 Database Schema
 
 ```
-profiles          ← extends auth.users, stores fitness data + onboarding state
+profiles          ← extends auth.users, stores fitness data + onboarding state + settings JSONB
 training_plans    ← race goals, one active plan per user
 weeks             ← individual training weeks (current + completed)
-workouts          ← daily workout details + actual completion data
+workouts          ← daily workout details + actual completion data columns (mostly unused)
 week_feedback     ← end-of-week athlete feedback
 ```
 
@@ -181,51 +184,80 @@ The app calls Claude via a **Vercel serverless proxy** at `/api/generate-week`:
 
 ## 4. Feature Status
 
-### ✅ Fully Implemented (Phases 1–4)
+### ✅ Fully Implemented (Phase 1)
 
-- **Authentication** — Email/password signup with email confirmation, login, logout, password reset, session persistence
+- **Authentication** — Email/password signup with duplicate user detection, email confirmation, login, logout, session persistence
 - **Protected routes** — Unauthenticated users redirected to login, loading spinner while auth resolves
 - **Server-side API proxy** — Claude API key never exposed to client, calls proxied through Vercel
 - **Supabase database** — Full schema with RLS, profiles, plans, weeks, workouts, feedback tables
 - **Data persistence** — Supabase as primary store, localStorage as offline cache/fallback
 - **Onboarding wizard** — 5-step flow with Supabase profile sync on completion
 - **AI plan generation** — Triathlon-aware prompts, JSON parsing with error recovery, week-by-week adaptation
-- **Dashboard** — Current week display, today's workout, upcoming workouts, weekly progress ring
-- **Workout actions** — Mark complete/skip with detailed logging (actual HR, RPE, splits, notes)
-- **Actual vs. planned comparison** — Post-completion data displayed against planned targets
+- **Dashboard** — Current week display, today's workout highlight, upcoming workouts, weekly progress ring
+- **Basic workout actions** — Mark complete / skip (status toggle only, no detailed logging)
 - **Week review & next week generation** — Feedback dialog → Claude → new adaptive week
-- **Calendar page** — Monthly view with color-coded workouts, drag-and-drop rescheduling with alerts
-- **Multi-week history browser** — Browse completed weeks with full workout detail
-- **Profile ↔ Training sync** — Fitness metric changes trigger replanning prompt
-- **Goal editing** — Change race date/type/target → automatic replanning
-- **Plan change requests** — "Request Plan Change" with mandatory comment
-- **Progress & analytics** — Training load monitoring, volume charts, discipline distribution, AI insights, race readiness score
-- **Strava integration** — OAuth flow, auto-match activities to planned workouts
-- **Google Calendar integration** — Push workouts as events, read conflicts
-- **Garmin Connect** — Activity sync
+- **Calendar page** — Monthly view with color-coded workout indicators
+- **Progress page** — Basic charts (bar chart, line chart) with Recharts
+- **Settings page** — Sign out, UI for toggles (not persisted to DB)
+- **Profile page** — View/edit fitness metrics (not persisted to Supabase on save)
+- **Goals page** — Display race goal information (read-only)
 - **Error boundary** — Global error boundary with "Try Again" and "Reset Data" recovery
-- **Sign out** — Available in Settings page with user email display
-- **Settings persistence** — Dark mode, notifications stored in Supabase
-- **Test suite** — Unit tests for `claudeApi.ts`, `TrainingContext`, onboarding
+- **Branding** — Custom TriCoach favicon, orange auth pages, all Lovable branding removed
 
-### 🔮 Planned (Phase 5: Social & Advanced)
+### 🔨 Phase 2: Core Experience Polish (NOT YET STARTED)
+
+- Detailed workout completion logging (actual HR, RPE, duration, notes)
+- Actual vs planned comparison display
+- Multi-week history browser page
+- Profile ↔ Training sync (Supabase persist + replanning trigger)
+- Workout rescheduling (move between days)
+- Plan change requests (RegeneratePlanDialog)
+- Goal editing with automatic replanning
+- Settings persistence to Supabase
+- Unit test suite
+
+### 🔮 Phase 3: Integrations (NOT YET STARTED)
+
+- Strava OAuth + activity auto-sync
+- Google Calendar event push + conflict avoidance
+- Garmin Connect activity sync (stretch goal)
+
+### 🔮 Phase 4: Intelligence & Analytics (NOT YET STARTED)
+
+- Enhanced progress dashboard (volume stacked bars, discipline pie, completion trend)
+- Training load monitoring (simplified TSS)
+- Race readiness score (0-100)
+- AI coaching insights (periodic Claude analysis)
+
+### 🔮 Phase 5: Social & Advanced (NOT YET STARTED)
 
 - PDF export of training plans
-- Social sharing of milestones and achievements
-- Push notifications via Web Push API + service worker
-- Multi-race support with multiple active plans
-- Coach mode (read-only view with override capability)
-- PWA with full offline support
+- Push notifications (Web Push API + service worker)
+- Multi-race support with plan switching
+- PWA with offline support
+- Coach mode (read-only shared view)
+- Social sharing of milestones
 
 ---
 
 ## 5. Resolved Issues
 
-All previously identified technical issues have been addressed:
+All Phase 1 technical issues have been addressed:
 
 1. ~~**🔴 API Key in Frontend**~~ → ✅ Moved to server-side Vercel serverless function
 2. ~~**🔴 No Data Backup**~~ → ✅ Supabase PostgreSQL with RLS; localStorage as cache
 3. ~~**🟡 `mockPlanGenerator.ts` dead code**~~ → ✅ Deleted
-4. ~~**🟡 Profile edits silently ignored**~~ → ✅ Profile ↔ Training sync implemented
-5. ~~**🟡 No error boundaries**~~ → ✅ Global ErrorBoundary with recovery UI
-6. **🟡 Date timezone edge cases** — Partially mitigated but may still affect users in extreme timezone offsets
+4. ~~**🟡 No error boundaries**~~ → ✅ Global ErrorBoundary with recovery UI
+5. ~~**🟡 Lovable branding**~~ → ✅ Removed from all code, config, and assets
+6. ~~**🟡 Duplicate user detection**~~ → ✅ Signup checks for empty identities array
+7. ~~**🟡 Auth page colors**~~ → ✅ Recolored from blue to orange palette
+8. **🟡 Date timezone edge cases** — Partially mitigated but may still affect users in extreme timezone offsets
+
+## 6. Known Limitations
+
+- **Profile edits don't persist to Supabase** — Changes update local context only (Phase 2 fix)
+- **No detailed workout logging** — Complete/skip is a status toggle, no actual data capture (Phase 2 fix)
+- **Settings don't persist** — UI toggles reset on reload (Phase 2 fix)
+- **Goals are read-only** — No editing capability (Phase 2 fix)
+- **No history browser** — Can only see current week (Phase 2 fix)
+- **No workout rescheduling** — Cannot move workouts between days (Phase 2 fix)

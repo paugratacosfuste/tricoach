@@ -12,89 +12,13 @@
 
 **Goal:** Move the Claude API key to a server-side Vercel function so it's never exposed in the client bundle.
 
-#### Files to Create
+#### Files Created
+- `api/generate-week.ts` — Vercel serverless function proxying Claude API calls
+- `vercel.json` — API rewrite rules + SPA catch-all routing
 
-##### [NEW] `api/generate-week.ts`
-Vercel serverless function that:
-1. Receives a POST request with the body: `{ prompt: string }`
-2. Reads `ANTHROPIC_API_KEY` from `process.env` (Vercel environment variable, NOT prefixed with `VITE_`)
-3. Calls `https://api.anthropic.com/v1/messages` with:
-   - Model: `claude-sonnet-4-20250514`
-   - Max tokens: 8000
-   - The prompt from the request body
-   - Headers: `x-api-key`, `anthropic-version: 2023-06-01` (do NOT include `anthropic-dangerous-direct-browser-access`)
-4. Returns the Claude response JSON to the client
-5. Handles errors: return appropriate HTTP status codes (401, 429, 500) with error messages
-
-```typescript
-// Exact structure:
-import type { VercelRequest, VercelResponse } from '@vercel/node';
-
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
-  
-  const { prompt } = req.body;
-  if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
-
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': process.env.ANTHROPIC_API_KEY!,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 8000,
-      messages: [{ role: 'user', content: prompt }],
-    }),
-  });
-
-  const data = await response.json();
-  if (!response.ok) return res.status(response.status).json(data);
-  return res.status(200).json(data);
-}
-```
-
-##### [NEW] `vercel.json`
-```json
-{
-  "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/$1" }
-  ]
-}
-```
-
-#### Files to Modify
-
-##### [MODIFY] `src/lib/claudeApi.ts`
-- **Remove** lines 20-21: `const ANTHROPIC_API_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY;` and `const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';`
-- **Change** the `generateWeekPlan()` function (line 409-461) to:
-  - Remove the API key check
-  - Build the prompt string using `buildWeekPrompt()` (already done)
-  - Call `/api/generate-week` instead of the Anthropic URL directly
-  - Remove `anthropic-dangerous-direct-browser-access` header
-  - Keep the response parsing logic (`parseWeekResponse`) unchanged
-
-Exact change in `generateWeekPlan()`:
-```typescript
-// Replace the fetch call (lines 431-444) with:
-const response = await fetch('/api/generate-week', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ prompt }),
-});
-```
-
-##### [MODIFY] `.env.local`
-- Remove `VITE_ANTHROPIC_API_KEY=...` (this key must be added to Vercel's environment variables dashboard instead, named `ANTHROPIC_API_KEY` without the `VITE_` prefix)
-
-#### Verification
-- Run `npm run build` — should succeed without VITE_ANTHROPIC_API_KEY reference
-- Deploy to Vercel, set `ANTHROPIC_API_KEY` in Vercel → Project Settings → Environment Variables
-- Complete onboarding flow → Week 1 should generate via the API route
-- Check the browser DevTools Network tab: requests should go to `/api/generate-week`, NOT to `api.anthropic.com`
-- Inspect the built JS bundle to confirm the API key is not present
+#### Files Modified
+- `src/lib/claudeApi.ts` — Client calls `/api/generate-week` instead of Anthropic directly
+- `.env.local` — Removed `VITE_ANTHROPIC_API_KEY`
 
 ---
 
@@ -102,189 +26,13 @@ const response = await fetch('/api/generate-week', {
 
 **Goal:** Persist all data in Supabase instead of localStorage.
 
-#### Prerequisites
-- Create a Supabase project at https://supabase.com
-- Note the project URL and anon key
-- Install: `npm install @supabase/supabase-js`
+#### Files Created
+- `src/lib/supabase.ts` — Supabase client initialization
+- `supabase-schema.sql` — Full DB schema (profiles, training_plans, weeks, workouts, week_feedback) + RLS + triggers
 
-#### Files to Create
-
-##### [NEW] `src/lib/supabase.ts`
-Supabase client initialization:
-```typescript
-import { createClient } from '@supabase/supabase-js';
-
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
-```
-
-##### [NEW] SQL migrations — run in Supabase SQL Editor
-
-```sql
--- Users profile (extends Supabase auth.users)
-CREATE TABLE public.profiles (
-  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-  first_name TEXT,
-  age INTEGER,
-  gender TEXT CHECK (gender IN ('male', 'female', 'other', 'prefer-not-to-say')),
-  weight NUMERIC(5,1),
-  height INTEGER,
-  fitness_level TEXT CHECK (fitness_level IN ('beginner', 'intermediate', 'advanced', 'elite')),
-  lthr INTEGER,
-  threshold_pace TEXT,
-  max_hr INTEGER,
-  ftp INTEGER,
-  swim_level TEXT CHECK (swim_level IN ('cant-swim', 'learning', 'comfortable', 'competitive')),
-  weekly_availability JSONB,  -- stores WeeklyAvailability object
-  integrations JSONB,         -- stores Integrations object
-  onboarding_complete BOOLEAN DEFAULT false,
-  created_at TIMESTAMPTZ DEFAULT now(),
-  updated_at TIMESTAMPTZ DEFAULT now()
-);
-
--- Training plans
-CREATE TABLE public.training_plans (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
-  race_name TEXT NOT NULL,
-  race_date DATE NOT NULL,
-  race_type TEXT NOT NULL,
-  goal_time TEXT,
-  goal_priority TEXT CHECK (goal_priority IN ('finish', 'pb', 'podium')),
-  total_weeks INTEGER NOT NULL,
-  current_week_number INTEGER DEFAULT 1,
-  is_active BOOLEAN DEFAULT true,
-  created_at TIMESTAMPTZ DEFAULT now()
-);
-
--- Weeks (current and completed)
-CREATE TABLE public.weeks (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  plan_id UUID REFERENCES public.training_plans(id) ON DELETE CASCADE NOT NULL,
-  week_number INTEGER NOT NULL,
-  start_date DATE NOT NULL,
-  end_date DATE NOT NULL,
-  theme TEXT,
-  focus TEXT,
-  phase TEXT,
-  total_planned_hours NUMERIC(4,1),
-  is_recovery_week BOOLEAN DEFAULT false,
-  is_completed BOOLEAN DEFAULT false,
-  created_at TIMESTAMPTZ DEFAULT now(),
-  UNIQUE(plan_id, week_number)
-);
-
--- Workouts
-CREATE TABLE public.workouts (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  week_id UUID REFERENCES public.weeks(id) ON DELETE CASCADE NOT NULL,
-  date DATE NOT NULL,
-  type TEXT CHECK (type IN ('swim', 'bike', 'run', 'strength', 'rest')) NOT NULL,
-  name TEXT NOT NULL,
-  duration INTEGER NOT NULL,                  -- minutes
-  distance NUMERIC(6,2),                      -- km
-  description TEXT,
-  purpose TEXT,
-  structure JSONB,                            -- WorkoutSegment[]
-  heart_rate_guidance TEXT,
-  pace_guidance TEXT,
-  coaching_tips JSONB,                        -- string[]
-  adaptation_notes TEXT,
-  status TEXT CHECK (status IN ('planned', 'completed', 'skipped', 'partial')) DEFAULT 'planned',
-  -- Actual data (filled on completion)
-  actual_duration INTEGER,
-  actual_distance NUMERIC(6,2),
-  actual_avg_hr INTEGER,
-  actual_feeling INTEGER CHECK (actual_feeling BETWEEN 1 AND 5),
-  actual_notes TEXT,
-  actual_rpe INTEGER CHECK (actual_rpe BETWEEN 1 AND 10),
-  actual_splits JSONB,                        -- for future detailed logging
-  created_at TIMESTAMPTZ DEFAULT now()
-);
-
--- Week feedback
-CREATE TABLE public.week_feedback (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  week_id UUID REFERENCES public.weeks(id) ON DELETE CASCADE NOT NULL UNIQUE,
-  overall_feeling TEXT CHECK (overall_feeling IN ('struggling', 'tired', 'okay', 'good', 'great')) NOT NULL,
-  physical_issues JSONB,                      -- string[]
-  notes TEXT,
-  next_week_constraints TEXT,
-  created_at TIMESTAMPTZ DEFAULT now()
-);
-
--- Row Level Security
-ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.training_plans ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.weeks ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.workouts ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.week_feedback ENABLE ROW LEVEL SECURITY;
-
--- RLS Policies: users can only access their own data
-CREATE POLICY "Users can view own profile" ON public.profiles FOR SELECT USING (auth.uid() = id);
-CREATE POLICY "Users can update own profile" ON public.profiles FOR UPDATE USING (auth.uid() = id);
-CREATE POLICY "Users can insert own profile" ON public.profiles FOR INSERT WITH CHECK (auth.uid() = id);
-
-CREATE POLICY "Users can view own plans" ON public.training_plans FOR ALL USING (user_id = auth.uid());
-
-CREATE POLICY "Users can access own weeks" ON public.weeks FOR ALL
-  USING (plan_id IN (SELECT id FROM public.training_plans WHERE user_id = auth.uid()));
-
-CREATE POLICY "Users can access own workouts" ON public.workouts FOR ALL
-  USING (week_id IN (SELECT w.id FROM public.weeks w JOIN public.training_plans p ON w.plan_id = p.id WHERE p.user_id = auth.uid()));
-
-CREATE POLICY "Users can access own feedback" ON public.week_feedback FOR ALL
-  USING (week_id IN (SELECT w.id FROM public.weeks w JOIN public.training_plans p ON w.plan_id = p.id WHERE p.user_id = auth.uid()));
-
--- Auto-create profile on signup
-CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS TRIGGER AS $$
-BEGIN
-  INSERT INTO public.profiles (id) VALUES (NEW.id);
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
-CREATE TRIGGER on_auth_user_created
-  AFTER INSERT ON auth.users
-  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
-```
-
-#### Files to Modify
-
-##### [MODIFY] `src/contexts/TrainingContext.tsx`
-- Replace all `localStorage` read/write functions (`savePlanToStorage`, `loadPlanFromStorage`, `saveUserDataToStorage`, `loadUserDataFromStorage`) with Supabase queries
-- The `initializePlan` function should:
-  1. Insert into `training_plans`
-  2. Insert into `weeks` (week 1)
-  3. Insert into `workouts` (all workouts for week 1)
-- The `updateWorkoutStatus` function should update the workout row in Supabase
-- The `generateNextWeek` function should:
-  1. Insert feedback into `week_feedback`
-  2. Mark current week as `is_completed = true`
-  3. Insert new week and workouts
-- Keep localStorage as offline fallback / cache
-
-##### [MODIFY] `src/contexts/OnboardingContext.tsx`
-- Replace `localStorage` read/write with Supabase `profiles` table operations
-- `completeOnboarding` should update `profiles.onboarding_complete = true`
-
-##### [MODIFY] `.env.local`
-Add:
-```
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your-anon-key
-```
-
-#### Verification
-- Sign up a new user → profile row should appear in `profiles` table
-- Complete onboarding → profile should have fitness data populated
-- Generate week 1 → rows in `training_plans`, `weeks`, and `workouts` tables
-- Mark a workout complete → `workouts` row should update
-- Complete week review → `week_feedback` row created, new week generated
-- Clear localStorage → reload → data should still be there from Supabase
+#### Files Modified
+- `src/contexts/TrainingContext.tsx` — Supabase persistence with localStorage as offline cache
+- `src/contexts/OnboardingContext.tsx` — Supabase profile sync on onboarding completion
 
 ---
 
@@ -292,170 +40,326 @@ VITE_SUPABASE_ANON_KEY=your-anon-key
 
 **Goal:** Email/password signup with email confirmation.
 
-#### Supabase Dashboard Config
-- Go to Authentication → Settings
-- Enable email confirmations
-- Set the site URL (your Vercel deployment URL)
-- Set redirect URLs for confirmation emails
+#### Files Created
+- `src/contexts/AuthContext.tsx` — Auth state, signup with duplicate detection, login, logout, reset password
+- `src/pages/LoginPage.tsx` — Login form (orange palette)
+- `src/pages/SignupPage.tsx` — Registration form (orange palette)
+- `src/pages/ConfirmEmailPage.tsx` — Post-signup verification page (orange palette)
+- `src/components/ProtectedRoute.tsx` — Auth route guard
 
-#### Files to Create
-
-##### [NEW] `src/contexts/AuthContext.tsx`
-```typescript
-// Provides:
-// - user: User | null
-// - session: Session | null
-// - isLoading: boolean
-// - signUp(email, password, firstName): Promise — calls supabase.auth.signUp()
-// - signIn(email, password): Promise — calls supabase.auth.signInWithPassword()
-// - signOut(): Promise — calls supabase.auth.signOut()
-// - resetPassword(email): Promise
-
-// On mount: supabase.auth.getSession() + supabase.auth.onAuthStateChange()
-```
-
-##### [NEW] `src/pages/LoginPage.tsx`
-- Email + password form
-- "Don't have an account? Sign up" link
-- "Forgot password?" link
-- Error handling for invalid credentials
-
-##### [NEW] `src/pages/SignupPage.tsx`
-- Email + password + first name form
-- Password requirements (min 8 chars)
-- On submit: call `signUp()` → show "Check your email for confirmation" message
-- "Already have an account? Log in" link
-
-##### [NEW] `src/pages/ConfirmEmailPage.tsx`
-- Simple page shown after signup: "Please check your email to confirm your account"
-- Auto-redirect to login once confirmed
-
-##### [NEW] `src/components/ProtectedRoute.tsx`
-```typescript
-// Wraps routes that require authentication
-// If not authenticated → redirect to /login
-// If authenticated but not onboarded → redirect to /
-// Shows loading spinner while auth state is resolving
-```
-
-#### Files to Modify
-
-##### [MODIFY] `src/App.tsx`
-- Wrap everything in `<AuthProvider>`
-- Add routes: `/login`, `/signup`, `/confirm-email`
-- Wrap protected routes with `<ProtectedRoute>`
-- New route structure:
-  ```
-  /login          → LoginPage (public)
-  /signup         → SignupPage (public)
-  /confirm-email  → ConfirmEmailPage (public)
-  /               → ProtectedRoute → Index (onboarding or dashboard)
-  /dashboard      → ProtectedRoute → Dashboard
-  /calendar       → ProtectedRoute → CalendarPage
-  /progress       → ProtectedRoute → ProgressPage
-  /goals          → ProtectedRoute → GoalsPage
-  /settings       → ProtectedRoute → SettingsPage
-  /profile        → ProtectedRoute → ProfilePage
-  ```
-
-#### Verification
-- Visit `/dashboard` without logging in → should redirect to `/login`
-- Sign up with an email → should receive confirmation email
-- Try to log in before confirming → should get error
-- Confirm email → log in → should reach onboarding/dashboard
-- Log out → should redirect to `/login`
-- Refresh page while logged in → should stay authenticated (session persists)
+#### Files Modified
+- `src/App.tsx` — AuthProvider wrapping, public + protected route structure
 
 ---
 
 ### 1.4 Cleanup ✅
 
-#### Files to Modify/Delete
-
-##### [DELETE] `src/lib/mockPlanGenerator.ts`
-Remove entirely. It uses an outdated type shape and is never imported.
-
-##### [MODIFY] Multiple files
-Remove all `console.log` statements used for debugging (search for `console.log` across `src/`). Keep `console.error` and `console.warn` for actual error handling.
-
-##### [NEW] `src/components/ErrorBoundary.tsx`
-A React error boundary component that:
-- Catches render errors
-- Shows a friendly UI with "Something went wrong" message
-- Has a "Try Again" button that reloads the page
-- Has a "Reset Data" button that clears localStorage and signs out
-
-##### [MODIFY] `src/App.tsx`
-Wrap the router in `<ErrorBoundary>`.
+- Deleted `src/lib/mockPlanGenerator.ts`
+- Created `src/components/ErrorBoundary.tsx` — Global error boundary with recovery UI
+- Removed all Lovable branding (meta tags, favicon, lovable-tagger dependency)
+- Added `@vercel/node` devDependency to fix Vercel build
 
 ---
 
 ## Phase 2: Core Experience Polish
 
-### 2.1 Multi-Week History Browser
+> **Priority:** High — These features directly improve the daily training experience.
+> **Estimated effort:** ~3-4 sessions
 
-##### [NEW] `src/pages/HistoryPage.tsx`
-- Query all completed weeks from `weeks` table (where `is_completed = true`)
-- Display as a vertical timeline or list
-- Each week shows: week number, phase, theme, completion rate, feeling
-- Click a week → expand to show all workouts with their status and actual data
-- Add route `/history` to `App.tsx`
-- Add "History" to sidebar/mobile nav
+### 2.1 Workout Detail Logging
 
-### 2.2 Profile ↔ Training Sync
+**Goal:** When marking a workout complete, capture actual performance data instead of just flipping status.
 
-##### [MODIFY] `src/pages/ProfilePage.tsx`
-- When user changes fitness metrics and saves:
-  1. Update `profiles` table in Supabase
-  2. Show an alert dialog: "Your fitness metrics have changed. Would you like to regenerate next week's training plan with the updated data?"
-  3. If yes → call `generateNextWeek()` from `TrainingContext` with updated user data
-  4. Update `TrainingContext.userData` to stay in sync
-
-### 2.3 Workout Detail Logging
+**Current state:** `WorkoutDetailSheet.tsx` shows planned workout details and has "Mark as Done" / "Skip" buttons with no data entry.
 
 ##### [MODIFY] `src/components/dashboard/WorkoutDetailSheet.tsx`
-Expand the completion flow. When clicking "Mark Complete", show an expanded form:
-- **Actual duration** (pre-filled from planned)
-- **Actual distance** (pre-filled from planned)
-- **Average HR** (optional, number input)
-- **RPE** (1-10 scale with labeled buttons, e.g. 1=Very Easy, 10=Maximal)
-- **Split times** (optional, text area for free-form input)
-- **Notes** (free-text)
 
-Store all data in the `workouts` table columns: `actual_duration`, `actual_distance`, `actual_avg_hr`, `actual_feeling`, `actual_rpe`, `actual_notes`, `actual_splits`.
+Replace the simple "Mark as Done" button with an expandable completion form:
 
-### 2.4 Workout Editing & Rescheduling
+1. When "Mark as Done" is clicked, show a form section with:
+   - **Actual duration** — Number input, pre-filled from `workout.duration`
+   - **Actual distance** — Number input (if workout has distance), pre-filled from `workout.distance`
+   - **Average HR** — Number input (optional)
+   - **RPE** — Button group 1-10 with labels:
+     ```
+     1: Very Light | 2-3: Light | 4-5: Moderate | 6-7: Hard | 8-9: Very Hard | 10: Maximal
+     ```
+   - **How did it feel?** — 5-point emoji scale: 😫 😕 😐 🙂 🤩 (maps to 1-5)
+   - **Notes** — Free-text textarea
+   - **"Save & Complete"** button (primary) and **"Cancel"** button (ghost)
+
+2. On submit, call `onComplete(workout, actualData)` where:
+   ```typescript
+   interface ActualData {
+     duration: number;
+     distance?: number;
+     avgHR?: number;
+     feeling: 1 | 2 | 3 | 4 | 5;
+     rpe?: number;
+     notes?: string;
+   }
+   ```
+
+3. The parent (`Dashboard.tsx` / `CalendarPage.tsx`) should call `updateWorkoutStatus()` from `TrainingContext` with the actual data.
+
+##### [MODIFY] `src/contexts/TrainingContext.tsx` → `updateWorkoutStatus()`
+
+Ensure the Supabase update in `updateWorkoutStatus()` writes all actual data columns:
+```sql
+UPDATE workouts SET
+  status = $status,
+  actual_duration = $actualData.duration,
+  actual_distance = $actualData.distance,
+  actual_avg_hr = $actualData.avgHR,
+  actual_feeling = $actualData.feeling,
+  actual_rpe = $actualData.rpe,
+  actual_notes = $actualData.notes
+WHERE id = $workoutId
+```
+
+##### [MODIFY] `src/components/dashboard/WorkoutDetailSheet.tsx` (display section)
+
+When viewing a **completed** workout, show an "Actual vs Planned" comparison:
+```
+Planned: 45min / 8km         Actual: 42min / 7.8km
+HR: —                        RPE: 6/10 | Felt: 🙂
+Notes: "Legs felt heavy in the last km"
+```
+
+#### Verification
+- Mark a workout complete → form appears, fill all fields
+- Save → check Supabase `workouts` table for actual data columns
+- Reopen the completed workout → see actual vs planned comparison
+- Skip a workout → should NOT show the completion form
+
+---
+
+### 2.2 Multi-Week History Browser
+
+**Goal:** Browse all completed training weeks with workout detail.
+
+**Current state:** No `HistoryPage` exists. Dashboard only shows current week.
+
+##### [NEW] `src/pages/HistoryPage.tsx`
+
+1. Query all completed weeks from Supabase:
+   ```sql
+   SELECT w.*, wf.overall_feeling, wf.notes as feedback_notes
+   FROM weeks w
+   LEFT JOIN week_feedback wf ON wf.week_id = w.id
+   WHERE w.plan_id = $planId AND w.is_completed = true
+   ORDER BY w.week_number DESC
+   ```
+
+2. Display as a vertical timeline:
+   - Each week card shows: week number, phase, theme, date range, total hours
+   - Completion rate badge (e.g., "5/6 completed")
+   - Feeling indicator from feedback (emoji or color)
+   - Click to expand → show all workouts with status + actual data
+
+3. Empty state: "No completed weeks yet. Keep training!"
+
+##### [MODIFY] `src/App.tsx`
+- Add route: `/history` → `<ProtectedRoute><HistoryPage /></ProtectedRoute>`
+
+##### [MODIFY] `src/components/dashboard/Sidebar.tsx` and `MobileNav.tsx`
+- Add "History" navigation item with `History` icon from lucide-react
+- Position between "Progress" and "Goals" in nav order
+
+#### Verification
+- Complete a week → navigate to History → see the completed week
+- Click week card → expanded view shows all workouts
+- Empty state shows correctly for new users
+
+---
+
+### 2.3 Profile ↔ Training Sync
+
+**Goal:** When fitness metrics change, offer to regenerate the training plan with updated data.
+
+**Current state:** `ProfilePage.tsx` shows editable fitness metrics but "Save Changes" button does nothing meaningful — data updates in local context only, no Supabase persist, no replanning trigger.
+
+##### [MODIFY] `src/pages/ProfilePage.tsx`
+
+1. Wire "Save Changes" button to:
+   ```typescript
+   async function handleSave() {
+     // 1. Update Supabase profiles table
+     const { error } = await supabase
+       .from('profiles')
+       .update({
+         first_name: data.profile?.firstName,
+         age: data.profile?.age,
+         weight: data.profile?.weight,
+         height: data.profile?.height,
+         max_hr: data.fitness?.maxHR,
+         lthr: data.fitness?.lthr,
+         threshold_pace: data.fitness?.thresholdPace,
+         ftp: data.fitness?.ftp,
+       })
+       .eq('id', user.id);
+
+     // 2. Check if performance-affecting fields changed
+     if (metricsChanged) {
+       // Show AlertDialog: "Your fitness metrics have changed.
+       // Regenerate next week with updated data?"
+       // If yes → call generateNextWeek()
+     }
+   }
+   ```
+
+2. Track which fields changed by storing original values on mount and comparing at save time. Only trigger the replanning dialog for performance-related fields: `maxHR`, `lthr`, `thresholdPace`, `ftp`, `fitnessLevel`.
+
+3. Add a toast notification: "Profile saved successfully" on success.
+
+#### Verification
+- Edit threshold pace → save → see "Regenerate?" dialog
+- Accept regeneration → new week appears on dashboard
+- Edit just name → save → no regeneration dialog appears
+
+---
+
+### 2.4 Workout Rescheduling & Plan Change Requests
+
+**Goal:** Allow athletes to reschedule workouts within the week and request plan adjustments.
+
+**Current state:** `CalendarPage.tsx` has workout display per day but no drag-and-drop. No `RegeneratePlanDialog` exists.
 
 ##### [MODIFY] `src/pages/CalendarPage.tsx`
-- Implement drag-and-drop using a library (e.g., `@dnd-kit/core`) for workouts between days
-- On drop to a different day:
-  1. Show an `AlertDialog`: "Sticking to your planned schedule leads to better results. Are you sure you want to move this workout?"
-  2. If confirmed → update the workout's `date` in Supabase
+
+Option A (Simpler — recommended first): Instead of drag-and-drop, add a **"Move to..."** button in the `WorkoutDetailSheet` for planned workouts:
+1. Show day picker (Mon-Sun of the current week)
+2. On select, show `AlertDialog`: "Sticking to your planned schedule leads to better results. Are you sure you want to move this workout to [day]?"
+3. If confirmed → update `workouts.date` in Supabase
+
+Option B (Advanced — Phase 2 stretch): Implement drag-and-drop with `@dnd-kit/core`:
+```bash
+npm install @dnd-kit/core @dnd-kit/sortable @dnd-kit/utilities
+```
+- Make each workout card `Draggable`
+- Make each day cell `Droppable`
+- On drop → same confirmation dialog → update date
 
 ##### [NEW] `src/components/RegeneratePlanDialog.tsx`
-- Dialog with a **mandatory** text area for the athlete to explain what's wrong with the current plan
-- "Regenerate Plan" button disabled until text area has content (minimum 10 characters)
-- On submit → send the comment as `nextWeekConstraints` to `generateNextWeek()`
-- Accessible from Dashboard (add a "Request Plan Change" button)
+
+Dialog component:
+```typescript
+interface RegeneratePlanDialogProps {
+  open: boolean;
+  onClose: () => void;
+  onSubmit: (comment: string) => void;
+  isGenerating: boolean;
+}
+```
+
+1. **Mandatory text area** — "Tell us what's wrong with the current plan or what you need changed" (minimum 10 characters)
+2. Character counter below textarea
+3. "Regenerate Plan" button — disabled until 10+ characters
+4. Loading state while generating
+5. On submit → call `generateNextWeek()` from `TrainingContext` with comment as `nextWeekConstraints`
+
+##### [MODIFY] `src/pages/Dashboard.tsx`
+
+Add a "Request Plan Change" button below the weekly overview:
+```tsx
+<Button variant="outline" size="sm" onClick={() => setRegenerateOpen(true)}>
+  <RefreshCw className="w-4 h-4 mr-2" />
+  Request Plan Change
+</Button>
+```
+
+#### Verification
+- Open calendar → click workout → "Move to..." → select different day → confirm → verify date changed in Supabase
+- Dashboard → "Request Plan Change" → type comment → submit → loading → new week generated
+- Dialog should be disabled with < 10 characters
+
+---
 
 ### 2.5 Goal Editing with Replanning
 
+**Goal:** Allow athletes to modify their race goal and trigger automatic replanning.
+
+**Current state:** `GoalsPage.tsx` displays race info as read-only cards. No editing capability.
+
 ##### [MODIFY] `src/pages/GoalsPage.tsx`
-- Add "Edit Goal" button that enables editing fields: race name, race date, target time, race type, priority
-- On save:
-  1. Update `training_plans` table
-  2. Recalculate `total_weeks` from new race date
-  3. Show confirmation: "Your goal has changed. Next week's plan will be regenerated with the updated goal."
-  4. Mark current week as completed and trigger `generateNextWeek()` with updated plan data
+
+1. Add "Edit Goal" button that toggles fields into edit mode:
+   - Race name (text input)
+   - Race date (date picker)
+   - Race type (select dropdown: sprint, olympic, 70.3, ironman)
+   - Goal time (text input, optional)
+   - Priority (radio group: Finish, PB, Podium)
+
+2. On save:
+   ```typescript
+   // 1. Update training_plans table
+   await supabase.from('training_plans').update({
+     race_name: newData.raceName,
+     race_date: newData.raceDate,
+     race_type: newData.raceType,
+     goal_time: newData.goalTime,
+     goal_priority: newData.priority,
+     total_weeks: calculateTotalWeeks(newData.raceDate),
+   }).eq('id', planId);
+
+   // 2. Show confirmation dialog
+   // "Your goal has changed. Next week's plan will be regenerated."
+
+   // 3. Trigger replanning
+   await generateNextWeek(currentFeedback, "Goal updated: ...");
+   ```
+
+3. Recalculate `total_weeks` from the new race date using `calculateTotalWeeks()` from `TrainingContext`.
+
+#### Verification
+- Goals page → Edit Goal → change race date → save → see confirmation
+- Dashboard shows new week reflecting updated goal
+- Supabase `training_plans` row reflects new values
+
+---
 
 ### 2.6 Settings Persistence
 
+**Goal:** Persist user preferences to Supabase.
+
+**Current state:** `SettingsPage.tsx` shows toggles and buttons but nothing persists. Sign-out works. The `profiles` table already has a `settings JSONB` column.
+
 ##### [MODIFY] `src/pages/SettingsPage.tsx`
-- Store settings in Supabase `profiles` table (add a `settings JSONB` column) or in localStorage for non-critical preferences
-- Dark mode: use `next-themes` (already installed) and persist choice
-- Notification toggles: store state, wire up when push notifications are implemented later
+
+1. Load settings from Supabase on mount:
+   ```typescript
+   const { data } = await supabase
+     .from('profiles')
+     .select('settings')
+     .eq('id', user.id)
+     .single();
+   ```
+
+2. Save on toggle change:
+   ```typescript
+   await supabase.from('profiles').update({
+     settings: {
+       ...currentSettings,
+       darkMode: newValue,
+       weekStartsOn: newValue, // 'monday' | 'sunday'
+       distanceUnit: newValue, // 'km' | 'miles'
+       notifications: { workoutReminder: true, weekReview: true }
+     }
+   }).eq('id', user.id);
+   ```
+
+3. Dark mode: integrate with document class toggle (`document.documentElement.classList.toggle('dark')`). The Tailwind dark mode is already configured.
+
+#### Verification
+- Toggle dark mode → reload → preference persists
+- Change distance unit → check Supabase settings column
+- Log out → log back in → settings still there
+
+---
 
 ### 2.7 Test Suite
+
+**Goal:** Unit tests for core logic functions.
 
 ##### [NEW] `src/lib/__tests__/claudeApi.test.ts`
 - Test `fixTruncatedJson()` with various malformed JSON strings
@@ -478,42 +382,242 @@ Store all data in the `workouts` table columns: `actual_duration`, `actual_dista
 
 ---
 
-## Phase 3: Integrations (Future — Not for immediate implementation)
+## Phase 3: Integrations
 
-### Strava OAuth
-- Register app on Strava developer portal
-- Implement OAuth2 flow via Vercel API route (`/api/strava/auth`, `/api/strava/callback`)
-- Store Strava tokens in `profiles` table
-- Create `/api/strava/activities` to fetch recent activities
-- Auto-match activities to planned workouts by date + type + approximate distance
+> **Priority:** Medium — Adds major value but depends on third-party accounts.
+> **Estimated effort:** ~2-3 sessions per integration
 
-### Google Calendar
-- Register app in Google Cloud Console
-- Implement OAuth2 flow via Vercel API route
-- Push workouts as calendar events on plan generation
-- Read existing events to check for conflicts before scheduling
+### 3.1 Strava Integration
 
-### Garmin Connect (Stretch Goal)
-- More complex API requiring a Consumer Key approval process
-- Similar flow to Strava once approved
+**Goal:** Auto-sync Strava activities to match planned workouts and auto-complete them.
+
+#### OAuth Setup
+
+##### [NEW] `api/strava/auth.ts`
+Vercel serverless function to initiate Strava OAuth:
+```typescript
+export default function handler(req, res) {
+  const redirectUri = `${process.env.VERCEL_URL}/api/strava/callback`;
+  const authUrl = `https://www.strava.com/oauth/authorize?client_id=${process.env.STRAVA_CLIENT_ID}&redirect_uri=${redirectUri}&response_type=code&scope=read,activity:read_all`;
+  res.redirect(authUrl);
+}
+```
+
+##### [NEW] `api/strava/callback.ts`
+Handle OAuth callback:
+1. Exchange code for access_token + refresh_token
+2. Store tokens in Supabase `profiles.integrations` JSONB:
+   ```json
+   { "strava": { "connected": true, "accessToken": "...", "refreshToken": "...", "expiresAt": 12345 } }
+   ```
+3. Redirect back to `/settings?strava=connected`
+
+##### [NEW] `api/strava/activities.ts`
+Fetch recent activities:
+1. Check token expiry, refresh if needed via Strava API
+2. Fetch activities from the past 7 days
+3. Return formatted activity data
+
+##### [NEW] `src/lib/stravaSync.ts`
+Activity matching logic:
+```typescript
+function matchActivityToWorkout(activity: StravaActivity, workouts: Workout[]): Workout | null {
+  // Match by: same date + same type (strava "Run" → "run", "Ride" → "bike", "Swim" → "swim")
+  // + approximate distance match (within 20% tolerance)
+  // Return the best matching workout, or null if no match
+}
+```
+
+#### Schema Changes
+
+##### [MODIFY] `supabase-schema.sql`
+Add to `profiles` table (already has `integrations JSONB`):
+```sql
+-- No schema change needed; integrations JSONB handles Strava tokens
+```
+
+##### [MODIFY] `src/pages/SettingsPage.tsx`
+- "Connect Strava" button → navigates to `/api/strava/auth`
+- Show "Connected ✓" badge when `integrations.strava.connected === true`
+- "Disconnect" button → clear tokens from Supabase
+
+#### Environment Variables (Vercel Dashboard)
+```
+STRAVA_CLIENT_ID=your_client_id
+STRAVA_CLIENT_SECRET=your_client_secret
+```
+
+#### Verification
+- Click "Connect Strava" → OAuth flow → redirect back with connected status
+- Complete a Strava activity → check sync → workout auto-completes with actual data
+- Disconnect → tokens cleared, status updates
 
 ---
 
-## Phase 4: Intelligence & Analytics (Future)
+### 3.2 Google Calendar Integration
 
-- Rich progress dashboard with Recharts: weekly volume stacked bars, discipline pie chart, completion line chart
-- Training load monitoring: simplified TSS from duration × RPE
-- AI coaching insights: periodic Claude analysis of training history
-- Race readiness score: weighted combination of completion rate, load progression, time remaining
-- Nutrition/recovery tips: phase-aware AI suggestions
+**Goal:** Push planned workouts as events and check for scheduling conflicts.
+
+##### [NEW] `api/google/auth.ts` and `api/google/callback.ts`
+Google OAuth2 flow, similar to Strava pattern.
+
+##### [NEW] `api/google/events.ts`
+- `POST` — Push workouts as calendar events (title: "🏃 Easy Run - 45min", description with workout details)
+- `GET` — Read existing events to check for conflicts
+
+##### [MODIFY] `src/pages/SettingsPage.tsx`
+- "Connect Google Calendar" button → OAuth flow
+- Toggle: "Avoid conflicts with existing events" (sends calendar data to Claude prompt)
+- Toggle: "Auto-add workouts to calendar"
+
+##### [MODIFY] `src/lib/claudeApi.ts` → `buildWeekPrompt()`
+If Google Calendar is connected and "Avoid conflicts" is on, include busy times in the prompt:
+```
+SCHEDULING CONSTRAINTS:
+- Tuesday 18:00-20:00: Busy (work event)
+- Thursday 07:00-09:00: Busy (meeting)
+```
 
 ---
 
-## Phase 5: Social & Advanced (Future)
+### 3.3 Garmin Connect (Stretch Goal)
 
-- PDF export of training plans
-- Social sharing of milestones
-- Push notifications (Web Push API + service worker)
-- Multi-race support (multiple active plans)
-- Coach mode (read-only view with override capability)
-- PWA with offline support
+Similar activity sync as Strava but with Garmin's API.
+- Requires Garmin Consumer Key application (approval process takes days/weeks)
+- Same pattern: OAuth → token storage → activity fetch → workout matching
+
+---
+
+## Phase 4: Intelligence & Analytics
+
+> **Priority:** Medium — Enhances the coaching experience with data insights.
+> **Estimated effort:** ~2 sessions
+
+### 4.1 Enhanced Progress Dashboard
+
+**Current state:** `ProgressPage.tsx` has basic charts (bar chart, line chart) using Recharts with placeholder-style data from the training context.
+
+##### [MODIFY] `src/pages/ProgressPage.tsx`
+
+Expand with the following chart sections:
+
+1. **Weekly Volume Stacked Bar Chart** — X axis: week numbers, Y axis: hours. Stacked by discipline (swim=blue, bike=green, run=orange). Data source: completed weeks' workouts grouped by type.
+
+2. **Discipline Distribution Pie Chart** — Shows % of total training time per discipline. Include strength. Use sport-themed colors already defined in CSS (`--swim`, `--bike`, `--run`).
+
+3. **Completion Rate Line Chart** — X axis: weeks, Y axis: % completed workouts. Shows trend over time. Target line at 85%.
+
+4. **Training Load Trend** — Simplified TSS: `duration_minutes × RPE / 10` for each workout. Sum per week. Show as area chart with warning threshold (red zone if load jumps >30% week-over-week).
+
+### 4.2 Race Readiness Score
+
+##### [NEW] `src/lib/raceReadiness.ts`
+
+Calculate a 0-100 score from:
+```typescript
+function calculateRaceReadiness(plan: TrainingPlan): number {
+  const completionRate = completedWorkouts / totalWorkouts;        // 40% weight
+  const loadProgression = isProgressiveOverload(weeklyLoads);      // 20% weight
+  const consistency = calculateStreak(workoutStatuses);             // 20% weight
+  const timeRemaining = weeksToRace / totalWeeks;                  // 20% weight
+
+  return Math.round(
+    completionRate * 40 +
+    loadProgression * 20 +
+    consistency * 20 +
+    timeRemaining * 20
+  );
+}
+```
+
+Display on Dashboard as a circular progress indicator with color coding:
+- 0-40: Red ("Needs Attention")
+- 41-70: Yellow ("On Track")
+- 71-100: Green ("Race Ready")
+
+### 4.3 AI Coaching Insights
+
+##### [NEW] `api/coaching-insights.ts`
+
+Vercel serverless function that:
+1. Takes training history summary as input
+2. Asks Claude for 2-3 brief coaching insights (e.g., "Your swim volume has dropped 20% — consistency here will pay off on race day")
+3. Returns insights as string array
+
+##### [MODIFY] `src/pages/Dashboard.tsx` or `ProgressPage.tsx`
+- Show coaching insights card
+- Refresh weekly or on-demand ("Get AI Insights" button)
+- Cache insights in Supabase to avoid repeated API calls
+
+---
+
+## Phase 5: Social & Advanced
+
+> **Priority:** Low — Nice-to-have features for v2.
+> **Estimated effort:** ~3-4 sessions
+
+### 5.1 PDF Export of Training Plans
+
+##### [NEW] `src/lib/pdfExport.ts`
+Use `jspdf` or `@react-pdf/renderer`:
+```bash
+npm install jspdf
+```
+Generate a PDF with:
+- Cover page: race name, date, athlete name
+- Weekly training table: day, type, name, duration, distance
+- Include coaching notes per workout
+
+Add "Export to PDF" button on Dashboard and History pages.
+
+### 5.2 Push Notifications
+
+##### [NEW] `public/service-worker.js`
+Service worker for Web Push API.
+
+##### [NEW] `api/push/subscribe.ts`
+Store push subscription endpoint in Supabase.
+
+##### [NEW] `api/push/send.ts`
+Triggered by cron or Supabase edge function — sends notifications for:
+- Daily workout reminder (morning)
+- Week review reminder (Sunday evening)
+
+##### [MODIFY] `src/pages/SettingsPage.tsx`
+- "Enable Notifications" toggle → request browser permission + register subscription
+
+### 5.3 Multi-Race Support
+
+##### [MODIFY] Database schema
+- Allow multiple `training_plans` with `is_active` flag
+- Add plan switcher in dashboard header
+
+##### [MODIFY] `src/contexts/TrainingContext.tsx`
+- Load only the active plan
+- Add `switchPlan(planId)` function
+
+### 5.4 PWA Offline Support
+
+##### [NEW] `public/manifest.json`
+```json
+{
+  "name": "TriCoach AI",
+  "short_name": "TriCoach",
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#f97316",
+  "background_color": "#0f172a"
+}
+```
+
+##### [MODIFY] `index.html`
+Add manifest link and service worker registration.
+
+### 5.5 Coach Mode (Stretch Goal)
+- Read-only view of an athlete's training plan
+- Shared via link with token
+- Coach can add comments/overrides
+
+### 5.6 Social Sharing
+- Share milestones (workout streaks, race readiness milestones) as images
+- Generate shareable cards using canvas/SVG

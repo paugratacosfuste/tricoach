@@ -98,7 +98,7 @@ export default function Dashboard() {
 
   const [isReviewOpen, setIsReviewOpen] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
-  
+
   // Workout detail sheet state
   const [selectedWorkout, setSelectedWorkout] = useState<Workout | null>(null);
   const [isWorkoutSheetOpen, setIsWorkoutSheetOpen] = useState(false);
@@ -122,13 +122,9 @@ export default function Dashboard() {
     setIsWorkoutSheetOpen(true);
   };
 
-  // Handle workout complete from sheet
-  const handleWorkoutComplete = (workout: Workout) => {
-    updateWorkoutStatus(workout.id, 'completed', {
-      duration: workout.duration,
-      distance: workout.distance,
-      feeling: 3,
-    });
+  // Handle workout complete from sheet (receives actual data from completion form)
+  const handleWorkoutComplete = (workout: Workout, actualData: Workout['actualData']) => {
+    updateWorkoutStatus(workout.id, 'completed', actualData);
     setIsWorkoutSheetOpen(false);
   };
 
@@ -253,8 +249,8 @@ export default function Dashboard() {
                     todaysWorkout.status === 'completed'
                       ? 'default'
                       : todaysWorkout.status === 'skipped'
-                      ? 'destructive'
-                      : 'outline'
+                        ? 'destructive'
+                        : 'outline'
                   }
                 >
                   {todaysWorkout.status}
@@ -275,10 +271,10 @@ export default function Dashboard() {
                   </span>
                 )}
               </div>
-              
+
               {/* Purpose */}
               <p className="text-sm text-muted-foreground mb-4">{todaysWorkout.purpose}</p>
-              
+
               {/* Description */}
               <div className="bg-muted/50 rounded-lg p-4 mb-4">
                 <p className="text-sm whitespace-pre-line">{todaysWorkout.description}</p>
@@ -404,7 +400,7 @@ export default function Dashboard() {
           workout={selectedWorkout}
           open={isWorkoutSheetOpen}
           onClose={() => setIsWorkoutSheetOpen(false)}
-          onComplete={selectedWorkout ? () => handleWorkoutComplete(selectedWorkout) : undefined}
+          onComplete={selectedWorkout ? (actualData) => handleWorkoutComplete(selectedWorkout, actualData) : undefined}
           onSkip={selectedWorkout ? () => handleWorkoutSkip(selectedWorkout) : undefined}
         />
       </div>
@@ -427,9 +423,8 @@ function WorkoutListItem({ workout, onClick }: WorkoutListItemProps) {
   return (
     <button
       onClick={onClick}
-      className={`w-full flex items-center justify-between p-3 rounded-lg border transition-colors hover:bg-muted/50 ${
-        isWorkoutToday ? 'border-primary/50 bg-primary/5' : 'border-border'
-      }`}
+      className={`w-full flex items-center justify-between p-3 rounded-lg border transition-colors hover:bg-muted/50 ${isWorkoutToday ? 'border-primary/50 bg-primary/5' : 'border-border'
+        }`}
     >
       <div className="flex items-center gap-3">
         {getWorkoutIcon(workout.type)}

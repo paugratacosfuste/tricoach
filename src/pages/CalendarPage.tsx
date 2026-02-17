@@ -23,17 +23,13 @@ export function CalendarPage() {
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
   const [selectedWorkout, setSelectedWorkout] = useState<Workout | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
-  
+
   const { currentWeek, getWorkoutsForDate, updateWorkoutStatus } = useTraining();
 
   const selectedDateWorkouts = selectedDate ? getWorkoutsForDate(selectedDate) : [];
 
-  const handleComplete = (workout: Workout) => {
-    updateWorkoutStatus(workout.id, 'completed', {
-      duration: workout.duration,
-      distance: workout.distance,
-      feeling: 3,
-    });
+  const handleComplete = (workout: Workout, actualData: Workout['actualData']) => {
+    updateWorkoutStatus(workout.id, 'completed', actualData);
     setSheetOpen(false);
   };
 
@@ -50,19 +46,19 @@ export function CalendarPage() {
   // Check if a date is a rest day (has a rest workout or is in the current week with no workouts)
   const isRestDay = (date: Date): boolean => {
     if (!currentWeek) return false;
-    
+
     // Check if this date is within the current week
     const weekStart = new Date(currentWeek.startDate);
     const weekEnd = new Date(currentWeek.endDate);
     weekStart.setHours(0, 0, 0, 0);
     weekEnd.setHours(23, 59, 59, 999);
-    
+
     if (date < weekStart || date > weekEnd) return false;
-    
+
     // Check if there's a rest workout on this day
     const workouts = getWorkoutsForDate(date);
     if (workouts.some(w => w.type === 'rest')) return true;
-    
+
     // If no workouts scheduled for this day in the current week, it's a rest day
     return workouts.length === 0;
   };
@@ -71,7 +67,7 @@ export function CalendarPage() {
   const renderDay = (day: Date) => {
     const workouts = getWorkoutsForDate(day);
     const restDay = isRestDay(day);
-    
+
     // Show rest emoji if it's a rest day with no other workouts
     if (restDay && workouts.length === 0) {
       return (
@@ -80,17 +76,16 @@ export function CalendarPage() {
         </div>
       );
     }
-    
+
     if (workouts.length === 0) return null;
-    
+
     return (
       <div className="flex gap-0.5 justify-center mt-1">
         {workouts.slice(0, 3).map((w, i) => (
-          <span 
-            key={i} 
-            className={`text-xs ${
-              w.status === 'completed' ? 'opacity-50' : ''
-            } ${w.status === 'skipped' ? 'opacity-25' : ''}`}
+          <span
+            key={i}
+            className={`text-xs ${w.status === 'completed' ? 'opacity-50' : ''
+              } ${w.status === 'skipped' ? 'opacity-25' : ''}`}
           >
             {workoutIcons[w.type]}
           </span>
@@ -182,7 +177,7 @@ export function CalendarPage() {
               <h3 className="font-display text-lg font-semibold mb-4">
                 {selectedDate ? format(selectedDate, 'EEEE, MMMM d') : 'Select a date'}
               </h3>
-              
+
               {selectedIsRestDay ? (
                 <div className="text-center py-8">
                   <span className="text-4xl mb-2 block">{workoutIcons.rest}</span>
@@ -243,7 +238,7 @@ export function CalendarPage() {
         workout={selectedWorkout}
         open={sheetOpen}
         onClose={() => setSheetOpen(false)}
-        onComplete={selectedWorkout ? () => handleComplete(selectedWorkout) : undefined}
+        onComplete={selectedWorkout ? (actualData) => handleComplete(selectedWorkout, actualData) : undefined}
         onSkip={selectedWorkout ? () => handleSkip(selectedWorkout) : undefined}
       />
     </DashboardLayout>

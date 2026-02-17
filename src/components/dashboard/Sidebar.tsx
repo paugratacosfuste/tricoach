@@ -1,10 +1,11 @@
 import { NavLink, useLocation } from 'react-router-dom';
-import { Home, Calendar, BarChart3, Target, Settings, User, Activity } from 'lucide-react';
+import { Home, Calendar, BarChart3, History, Target, Settings, User, Activity } from 'lucide-react';
 
 const navItems = [
   { to: '/', icon: Home, label: 'Dashboard' },
   { to: '/calendar', icon: Calendar, label: 'Calendar' },
   { to: '/progress', icon: BarChart3, label: 'Progress' },
+  { to: '/history', icon: History, label: 'History' },
   { to: '/goals', icon: Target, label: 'Goals' },
   { to: '/settings', icon: Settings, label: 'Settings' },
   { to: '/profile', icon: User, label: 'Profile' },
@@ -32,15 +33,15 @@ export function Sidebar() {
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = location.pathname === item.to;
-            
+
             return (
               <li key={item.to}>
                 <NavLink
                   to={item.to}
                   className={`
                     flex items-center gap-3 px-4 py-3 rounded-xl transition-all
-                    ${isActive 
-                      ? 'bg-primary/10 text-primary' 
+                    ${isActive
+                      ? 'bg-primary/10 text-primary'
                       : 'text-muted-foreground hover:text-foreground hover:bg-muted'}
                   `}
                 >

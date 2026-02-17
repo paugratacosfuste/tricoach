@@ -690,6 +690,7 @@ export function TrainingProvider({ children }: { children: ReactNode }) {
           updateData.actual_distance = actualData.distance || null;
           updateData.actual_avg_hr = actualData.avgHR || null;
           updateData.actual_feeling = actualData.feeling || null;
+          updateData.actual_rpe = actualData.rpe || null;
           updateData.actual_notes = actualData.notes || null;
         }
         await supabase
