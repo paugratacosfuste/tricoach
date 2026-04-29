@@ -122,6 +122,16 @@ ANTHROPIC_API_KEY=your-anthropic-api-key
 
 > **Note:** For local development with `vercel dev`, the `ANTHROPIC_API_KEY` should be in `.env.local`. For production, set it in Vercel's environment variables dashboard.
 
+### Security checks (run before every PR)
+
+Audit the working tree + git history for leaked secrets:
+
+```bash
+bash scripts/secrets-audit.sh
+```
+
+Checks for `.env*` files in the working tree and history, Anthropic API keys (`sk-ant-...`), Supabase service-role references, and JWT-shaped tokens in tracked source. Exits non-zero if any leak is detected. Run `bash scripts/secrets-audit.sh --help` for details.
+
 ### Database Setup
 
 Run the SQL schema in your Supabase SQL Editor:

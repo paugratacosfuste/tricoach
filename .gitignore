@@ -22,10 +22,20 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-.env.local
+
+# Environment files — never tracked. Only .env.example is allowed.
+.env
+.env.*
+!.env.example
 
 # Internal planning docs (not for public repo)
 LAUNCH_PLAN.md
 
 # Claude Code per-developer config (machine-local permissions, not project source)
 .claude/
+
+# Internal working agreement for Claude Code (not for public repo)
+CLAUDE.md
+
+# Project-specific skills used by Claude Code (internal patterns, gitignored)
+skills/
