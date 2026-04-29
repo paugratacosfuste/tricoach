@@ -5,8 +5,18 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { format } from 'date-fns';
-import { Clock, MapPin, Lightbulb, Check, X, ChevronDown, ChevronUp } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+  AlertDialogAction,
+} from '@/components/ui/alert-dialog';
+import { format, addDays, isSameDay } from 'date-fns';
+import { Clock, MapPin, Lightbulb, Check, X, ChevronDown, ChevronUp, CalendarDays } from 'lucide-react';
 
 const workoutIcons: Record<WorkoutType, string> = {
   run: '🏃',
@@ -43,6 +53,8 @@ interface WorkoutDetailSheetProps {
   onClose: () => void;
   onComplete?: (actualData: Workout['actualData']) => void;
   onSkip?: () => void;
+  onReschedule?: (newDate: Date) => void;
+  currentWeekStart?: Date;
 }
 
 export function WorkoutDetailSheet({
@@ -50,9 +62,13 @@ export function WorkoutDetailSheet({
   open,
   onClose,
   onComplete,
-  onSkip
+  onSkip,
+  onReschedule,
+  currentWeekStart,
 }: WorkoutDetailSheetProps) {
   const [showCompletionForm, setShowCompletionForm] = useState(false);
+  const [showDayPicker, setShowDayPicker] = useState(false);
+  const [confirmRescheduleDate, setConfirmRescheduleDate] = useState<Date | null>(null);
   const [actualDuration, setActualDuration] = useState<number>(0);
   const [actualDistance, setActualDistance] = useState<string>('');
   const [avgHR, setAvgHR] = useState<string>('');
@@ -88,8 +104,24 @@ export function WorkoutDetailSheet({
 
   const handleClose = () => {
     setShowCompletionForm(false);
+    setShowDayPicker(false);
+    setConfirmRescheduleDate(null);
     onClose();
   };
+
+  const handleConfirmReschedule = () => {
+    if (confirmRescheduleDate && onReschedule) {
+      onReschedule(confirmRescheduleDate);
+      setConfirmRescheduleDate(null);
+      setShowDayPicker(false);
+      onClose();
+    }
+  };
+
+  // Build the 7 days of the current week for the day picker
+  const weekDays = currentWeekStart
+    ? Array.from({ length: 7 }, (_, i) => addDays(currentWeekStart, i))
+    : [];
 
   const isCompleted = workout.status === 'completed';
   const isSkipped = workout.status === 'skipped';
@@ -350,28 +382,90 @@ export function WorkoutDetailSheet({
 
           {/* Actions */}
           {workout.status === 'planned' && !showCompletionForm && (
-            <div className="flex gap-3 pt-4">
-              {onComplete && (
-                <Button
-                  onClick={handleStartComplete}
-                  className="flex-1"
-                >
-                  <Check className="w-4 h-4 mr-2" />
-                  Mark as Done
-                </Button>
-              )}
-              {onSkip && (
-                <Button
-                  onClick={onSkip}
-                  variant="outline"
-                >
-                  <X className="w-4 h-4 mr-2" />
-                  Skip
-                </Button>
+            <div className="space-y-3 pt-4">
+              <div className="flex gap-3">
+                {onComplete && (
+                  <Button
+                    onClick={handleStartComplete}
+                    className="flex-1"
+                  >
+                    <Check className="w-4 h-4 mr-2" />
+                    Mark as Done
+                  </Button>
+                )}
+                {onSkip && (
+                  <Button
+                    onClick={onSkip}
+                    variant="outline"
+                  >
+                    <X className="w-4 h-4 mr-2" />
+                    Skip
+                  </Button>
+                )}
+              </div>
+
+              {/* Move to... button (not for rest days) */}
+              {onReschedule && workout.type !== 'rest' && weekDays.length > 0 && (
+                <>
+                  <Button
+                    variant="ghost"
+                    className="w-full text-muted-foreground"
+                    onClick={() => setShowDayPicker(!showDayPicker)}
+                  >
+                    <CalendarDays className="w-4 h-4 mr-2" />
+                    Move to...
+                  </Button>
+
+                  {showDayPicker && (
+                    <div className="grid grid-cols-7 gap-1">
+                      {weekDays.map((day) => {
+                        const isCurrentDay = isSameDay(day, new Date(workout.date));
+                        return (
+                          <button
+                            key={day.toISOString()}
+                            type="button"
+                            disabled={isCurrentDay}
+                            onClick={() => setConfirmRescheduleDate(day)}
+                            className={`
+                              flex flex-col items-center gap-0.5 p-2 rounded-lg text-xs transition-all
+                              ${isCurrentDay
+                                ? 'bg-primary/20 text-primary font-bold cursor-default'
+                                : 'bg-muted/30 hover:bg-muted/50 text-muted-foreground cursor-pointer'
+                              }
+                            `}
+                          >
+                            <span className="font-medium">{format(day, 'EEE')}</span>
+                            <span>{format(day, 'd')}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}
         </div>
+
+        {/* Reschedule Confirmation Dialog */}
+        <AlertDialog open={!!confirmRescheduleDate} onOpenChange={(open) => !open && setConfirmRescheduleDate(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Reschedule Workout</AlertDialogTitle>
+              <AlertDialogDescription>
+                Move "{workout.name}" from {format(new Date(workout.date), 'EEEE')} to{' '}
+                {confirmRescheduleDate ? format(confirmRescheduleDate, 'EEEE, MMMM d') : ''}?
+                This may affect your weekly training balance.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={handleConfirmReschedule}>
+                Move Workout
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </SheetContent>
     </Sheet>
   );

@@ -10,22 +10,17 @@ const Index = () => {
   const { isComplete, isStarted, startOnboarding } = useOnboarding();
   const { plan } = useTraining();
 
-  console.log('Index render - isStarted:', isStarted, 'isComplete:', isComplete, 'hasPlan:', !!plan);
-
   // If onboarding is started but not complete, show the wizard
-  if (isStarted) {
-    console.log('Showing OnboardingWizard');
+  if (isStarted && !isComplete) {
     return <OnboardingWizard />;
   }
 
   // If we have a plan, show the dashboard
   if (plan && plan.currentWeek) {
-    console.log('Showing Dashboard');
     return <Dashboard />;
   }
 
   // Otherwise, show the welcome screen
-  console.log('Showing Welcome screen');
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
       <Card className="max-w-md w-full">
@@ -39,12 +34,9 @@ const Index = () => {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Button 
-            className="w-full" 
-            onClick={() => {
-              console.log('Get Started clicked');
-              startOnboarding();
-            }}
+          <Button
+            className="w-full"
+            onClick={startOnboarding}
           >
             Get Started
           </Button>

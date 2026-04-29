@@ -23,3 +23,9 @@ dist-ssr
 *.sln
 *.sw?
 .env.local
+
+# Internal planning docs (not for public repo)
+LAUNCH_PLAN.md
+
+# Claude Code per-developer config (machine-local permissions, not project source)
+.claude/

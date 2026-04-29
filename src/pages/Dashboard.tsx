@@ -10,6 +10,7 @@ import { useTraining } from '@/contexts/TrainingContext';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { WorkoutDetailSheet } from '@/components/dashboard/WorkoutDetailSheet';
 import { WeekReview } from '@/components/WeekReview';
+import { RegeneratePlanDialog } from '@/components/RegeneratePlanDialog';
 import { WeekFeedback, Workout, WorkoutType } from '@/types/training';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -27,6 +28,7 @@ import {
   AlertCircle,
   Loader2,
   RefreshCw,
+  MessageSquare,
 } from 'lucide-react';
 
 // ============================================
@@ -91,6 +93,8 @@ export default function Dashboard() {
     error,
     clearError,
     updateWorkoutStatus,
+    rescheduleWorkout,
+    regenerateCurrentWeek,
     getTodaysWorkout,
     getUpcomingWorkouts,
     generateNextWeek,
@@ -98,6 +102,8 @@ export default function Dashboard() {
 
   const [isReviewOpen, setIsReviewOpen] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isRegenerateOpen, setIsRegenerateOpen] = useState(false);
+  const [isRegenerating, setIsRegenerating] = useState(false);
 
   // Workout detail sheet state
   const [selectedWorkout, setSelectedWorkout] = useState<Workout | null>(null);
@@ -132,6 +138,19 @@ export default function Dashboard() {
   const handleWorkoutSkip = (workout: Workout) => {
     updateWorkoutStatus(workout.id, 'skipped');
     setIsWorkoutSheetOpen(false);
+  };
+
+  // Handle plan change request
+  const handleRegeneratePlan = async (comment: string) => {
+    setIsRegenerating(true);
+    try {
+      await regenerateCurrentWeek(comment);
+      setIsRegenerateOpen(false);
+    } catch (err) {
+      console.error('Failed to regenerate plan:', err);
+    } finally {
+      setIsRegenerating(false);
+    }
   };
 
   // Loading state
@@ -380,6 +399,15 @@ export default function Dashboard() {
                 Complete Week & Generate Next
               </Button>
             </div>
+            <Button
+              variant="ghost"
+              className="w-full mt-2 text-muted-foreground"
+              onClick={() => setIsRegenerateOpen(true)}
+              disabled={isLoading || isRegenerating}
+            >
+              <MessageSquare className="w-4 h-4 mr-2" />
+              Request Plan Change
+            </Button>
             <p className="text-xs text-muted-foreground text-center mt-3">
               Complete your week review to get a personalized plan for next week.
             </p>
@@ -395,6 +423,14 @@ export default function Dashboard() {
           isLoading={isGenerating}
         />
 
+        {/* Plan Change Request Dialog */}
+        <RegeneratePlanDialog
+          isOpen={isRegenerateOpen}
+          onClose={() => setIsRegenerateOpen(false)}
+          onSubmit={handleRegeneratePlan}
+          isLoading={isRegenerating}
+        />
+
         {/* Workout Detail Sheet */}
         <WorkoutDetailSheet
           workout={selectedWorkout}
@@ -402,6 +438,11 @@ export default function Dashboard() {
           onClose={() => setIsWorkoutSheetOpen(false)}
           onComplete={selectedWorkout ? (actualData) => handleWorkoutComplete(selectedWorkout, actualData) : undefined}
           onSkip={selectedWorkout ? () => handleWorkoutSkip(selectedWorkout) : undefined}
+          onReschedule={selectedWorkout ? (newDate) => {
+            rescheduleWorkout(selectedWorkout.id, newDate);
+            setIsWorkoutSheetOpen(false);
+          } : undefined}
+          currentWeekStart={currentWeek?.startDate}
         />
       </div>
     </DashboardLayout>

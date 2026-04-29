@@ -28,7 +28,7 @@ import {
  * Builds a compact summary of training history for Claude
  * Recent weeks get more detail, older weeks are compressed
  */
-function buildHistoryContext(completedWeeks: CompletedWeek[]): string {
+export function buildHistoryContext(completedWeeks: CompletedWeek[]): string {
   if (completedWeeks.length === 0) {
     return "This is the athlete's first week of training. No prior history.";
   }
@@ -249,7 +249,7 @@ ${isRecovery ? '- This is recovery week: shorter sessions, lower intensity, but 
 /**
  * Attempts to fix truncated or malformed JSON
  */
-function fixTruncatedJson(str: string): string {
+export function fixTruncatedJson(str: string): string {
   // Remove markdown code blocks
   str = str.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
 
@@ -313,7 +313,7 @@ function fixTruncatedJson(str: string): string {
 /**
  * Parses Claude's response into a WeekPlan
  */
-function parseWeekResponse(responseText: string, weekNumber: number): WeekPlan {
+export function parseWeekResponse(responseText: string, weekNumber: number): WeekPlan {
   console.log('Parsing Claude response, length:', responseText.length);
 
   // Extract JSON

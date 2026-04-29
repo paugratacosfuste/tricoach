@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useEffect, useRef } from 'react';
 import { OnboardingData, UserProfile, FitnessAssessment, RaceGoal, WeeklyAvailability, Integrations } from '@/types/training';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface OnboardingContextType {
   data: Partial<OnboardingData>;
@@ -40,6 +41,7 @@ const defaultIntegrations: Integrations = {
 const OnboardingContext = createContext<OnboardingContextType | undefined>(undefined);
 
 export function OnboardingProvider({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
   const [currentStep, setCurrentStep] = useState(1);
 
   const [isComplete, setIsComplete] = useState(() => {
@@ -109,6 +111,22 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     };
     checkProfile();
   }, []);
+
+  // Reset onboarding state when user signs out
+  const prevUser = useRef(user);
+  useEffect(() => {
+    if (prevUser.current && !user) {
+      // User just signed out — reset onboarding state
+      setIsStarted(false);
+      setIsComplete(false);
+      setCurrentStep(1);
+      setData({
+        availability: defaultAvailability,
+        integrations: defaultIntegrations,
+      });
+    }
+    prevUser.current = user;
+  }, [user]);
 
   const saveToLocalStorage = (updatedData: Partial<OnboardingData>) => {
     localStorage.setItem('onboarding_data', JSON.stringify(updatedData));

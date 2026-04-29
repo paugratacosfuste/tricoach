@@ -8,6 +8,16 @@ import { Target, Calendar, Trophy, Clock, MapPin, TrendingUp, Edit3, Save, X, Lo
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+  AlertDialogAction,
+} from '@/components/ui/alert-dialog';
 import { Label } from '@/components/ui/label';
 
 const raceTypeLabels: Record<string, string> = {
@@ -45,12 +55,13 @@ const raceDistances: Record<string, { swim?: string; bike?: string; run: string 
 
 export function GoalsPage() {
   const { data, updateGoal } = useOnboarding();
-  const { plan } = useTraining();
+  const { plan, regenerateCurrentWeek } = useTraining();
   const goal = data.goal;
 
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [showRegenDialog, setShowRegenDialog] = useState(false);
 
   // Edit form state
   const [editRaceName, setEditRaceName] = useState(goal?.raceName || '');
@@ -74,6 +85,12 @@ export function GoalsPage() {
     setIsSaving(true);
     setSaveSuccess(false);
     try {
+      // Check if training-affecting fields changed before updating
+      const trainingFieldsChanged =
+        editRaceType !== (goal?.raceType || '') ||
+        editRaceDate !== (goal?.raceDate ? new Date(goal.raceDate).toISOString().split('T')[0] : '') ||
+        editPriority !== (goal?.priority || 'finish');
+
       // Update context
       updateGoal({
         raceName: editRaceName,
@@ -98,8 +115,13 @@ export function GoalsPage() {
       }
 
       setIsEditing(false);
-      setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 3000);
+
+      if (trainingFieldsChanged && plan?.currentWeek) {
+        setShowRegenDialog(true);
+      } else {
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 3000);
+      }
     } catch (err) {
       console.error('Failed to save goal:', err);
     } finally {
@@ -374,6 +396,34 @@ export function GoalsPage() {
           </div>
         </div>
       </div>
+
+      <AlertDialog open={showRegenDialog} onOpenChange={setShowRegenDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Update Training Plan?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Your race goal has changed. Would you like to regenerate your current
+              training week to better align with your updated goal?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => {
+              setSaveSuccess(true);
+              setTimeout(() => setSaveSuccess(false), 3000);
+            }}>
+              Keep Current Plan
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={() => {
+              regenerateCurrentWeek('Race goal updated - adjust training plan accordingly');
+              setShowRegenDialog(false);
+              setSaveSuccess(true);
+              setTimeout(() => setSaveSuccess(false), 3000);
+            }}>
+              Regenerate Plan
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </DashboardLayout>
   );
 }

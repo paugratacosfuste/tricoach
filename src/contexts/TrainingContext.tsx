@@ -31,9 +31,11 @@ interface TrainingContextType {
   // Plan management
   initializePlan: (userData: OnboardingData) => Promise<void>;
   generateNextWeek: (feedback: WeekFeedback, constraints?: string) => Promise<void>;
+  regenerateCurrentWeek: (constraints: string) => Promise<void>;
 
   // Workout management
   updateWorkoutStatus: (workoutId: string, status: WorkoutStatus, actualData?: Workout['actualData']) => void;
+  rescheduleWorkout: (workoutId: string, newDate: Date) => void;
   getWorkoutById: (workoutId: string) => Workout | undefined;
   getTodaysWorkout: () => Workout | undefined;
   getUpcomingWorkouts: (count: number) => Workout[];
@@ -629,6 +631,63 @@ export function TrainingProvider({ children }: { children: ReactNode }) {
   };
 
   /**
+   * Regenerate the current week's plan without advancing.
+   * Preserves already-completed/skipped workouts.
+   */
+  const regenerateCurrentWeek = async (constraints: string): Promise<void> => {
+    if (!plan || !plan.currentWeek || !userData) {
+      setError('No active plan or user data found');
+      return;
+    }
+
+    if (isLoading) return;
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const newWeek = await generateWeekPlan(
+        userData,
+        plan.currentWeekNumber,
+        plan.totalWeeks,
+        plan.completedWeeks,
+        constraints
+      );
+
+      // Preserve workouts that are already completed or skipped
+      const preservedWorkouts = plan.currentWeek.workouts.filter(
+        (w) => w.status === 'completed' || w.status === 'skipped'
+      );
+      const preservedDates = new Set(
+        preservedWorkouts.map((w) => new Date(w.date).toDateString())
+      );
+
+      // Only keep new planned workouts for dates that don't have preserved workouts
+      const newPlannedWorkouts = newWeek.workouts.filter(
+        (w) => !preservedDates.has(new Date(w.date).toDateString())
+      );
+
+      const mergedWorkouts = [...preservedWorkouts, ...newPlannedWorkouts].sort(
+        (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+      );
+
+      setPlan({
+        ...plan,
+        currentWeek: {
+          ...newWeek,
+          workouts: mergedWorkouts,
+        },
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to regenerate week';
+      console.error('Error regenerating current week:', message);
+      setError(message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  /**
    * Complete current week without generating next (for manual review)
    */
   const completeCurrentWeek = (feedback: WeekFeedback): void => {
@@ -699,6 +758,40 @@ export function TrainingProvider({ children }: { children: ReactNode }) {
           .eq('id', workoutId);
       } catch (err) {
         console.error('Failed to update workout in Supabase:', err);
+      }
+    })();
+  };
+
+  /**
+   * Reschedule a workout to a different date within the current week
+   */
+  const rescheduleWorkout = (workoutId: string, newDate: Date): void => {
+    if (!plan || !plan.currentWeek) return;
+
+    const updatedWorkouts = plan.currentWeek.workouts.map((workout) => {
+      if (workout.id === workoutId) {
+        return { ...workout, date: newDate };
+      }
+      return workout;
+    });
+
+    setPlan({
+      ...plan,
+      currentWeek: {
+        ...plan.currentWeek,
+        workouts: updatedWorkouts,
+      },
+    });
+
+    // Also update in Supabase
+    (async () => {
+      try {
+        await supabase
+          .from('workouts')
+          .update({ date: newDate.toISOString().split('T')[0] })
+          .eq('id', workoutId);
+      } catch (err) {
+        console.error('Failed to reschedule workout in Supabase:', err);
       }
     })();
   };
@@ -800,7 +893,9 @@ export function TrainingProvider({ children }: { children: ReactNode }) {
         error,
         initializePlan,
         generateNextWeek,
+        regenerateCurrentWeek,
         updateWorkoutStatus,
+        rescheduleWorkout,
         getWorkoutById,
         getTodaysWorkout,
         getUpcomingWorkouts,

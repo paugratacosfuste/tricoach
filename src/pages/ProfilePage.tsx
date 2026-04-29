@@ -1,10 +1,21 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { useOnboarding } from '@/contexts/OnboardingContext';
+import { useTraining } from '@/contexts/TrainingContext';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+  AlertDialogAction,
+} from '@/components/ui/alert-dialog';
 import { User, Activity, Target, Heart, Gauge, Save, Loader2, CheckCircle2 } from 'lucide-react';
 
 const fitnessLevelLabels: Record<string, string> = {
@@ -23,8 +34,19 @@ const swimLevelLabels: Record<string, string> = {
 
 export function ProfilePage() {
   const { data, updateProfile, updateFitness } = useOnboarding();
+  const { plan, regenerateCurrentWeek, isLoading: isRegenerating } = useTraining();
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [showRegenDialog, setShowRegenDialog] = useState(false);
+
+  // Snapshot of performance-affecting fields at mount/last save
+  const originalFitness = useRef({
+    maxHR: data.fitness?.maxHR,
+    lthr: data.fitness?.lthr,
+    thresholdPace: data.fitness?.thresholdPace,
+    ftp: data.fitness?.ftp,
+    fitnessLevel: data.fitness?.fitnessLevel,
+  });
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -52,8 +74,30 @@ export function ProfilePage() {
         .eq('id', user.id);
 
       if (error) throw error;
-      setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 3000);
+
+      // Check if performance-affecting fields changed
+      const fitnessChanged =
+        data.fitness?.maxHR !== originalFitness.current.maxHR ||
+        data.fitness?.lthr !== originalFitness.current.lthr ||
+        data.fitness?.thresholdPace !== originalFitness.current.thresholdPace ||
+        data.fitness?.ftp !== originalFitness.current.ftp ||
+        data.fitness?.fitnessLevel !== originalFitness.current.fitnessLevel;
+
+      // Update snapshot
+      originalFitness.current = {
+        maxHR: data.fitness?.maxHR,
+        lthr: data.fitness?.lthr,
+        thresholdPace: data.fitness?.thresholdPace,
+        ftp: data.fitness?.ftp,
+        fitnessLevel: data.fitness?.fitnessLevel,
+      };
+
+      if (fitnessChanged && plan?.currentWeek) {
+        setShowRegenDialog(true);
+      } else {
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 3000);
+      }
     } catch (err) {
       console.error('Failed to save profile:', err);
     } finally {
@@ -253,6 +297,34 @@ export function ProfilePage() {
           </Button>
         </div>
       </div>
+
+      <AlertDialog open={showRegenDialog} onOpenChange={setShowRegenDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Update Training Plan?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You've updated fitness metrics that affect your training zones and intensities.
+              Would you like to regenerate your current week's plan to reflect these changes?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => {
+              setSaveSuccess(true);
+              setTimeout(() => setSaveSuccess(false), 3000);
+            }}>
+              Keep Current Plan
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={() => {
+              regenerateCurrentWeek('Fitness metrics updated - adjust training zones and intensities accordingly');
+              setShowRegenDialog(false);
+              setSaveSuccess(true);
+              setTimeout(() => setSaveSuccess(false), 3000);
+            }}>
+              Regenerate Plan
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </DashboardLayout>
   );
 }
