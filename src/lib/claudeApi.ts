@@ -446,6 +446,17 @@ export async function generateWeekPlan(
     throw new Error('Session expired. Please log in again.');
   }
 
+  if (response.status === 429) {
+    const DEFAULT_RETRY_AFTER_SECONDS = 60 * 60; // 1 hour fallback if the server didn't say
+    const data = await response.json().catch(() => ({}));
+    const retryAfterSeconds: number =
+      typeof data.retryAfterSeconds === 'number' ? data.retryAfterSeconds : DEFAULT_RETRY_AFTER_SECONDS;
+    const minutes = Math.max(1, Math.ceil(retryAfterSeconds / 60));
+    throw new Error(
+      `You've hit the plan-generation limit. Try again in about ${minutes} minute${minutes === 1 ? '' : 's'}.`,
+    );
+  }
+
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
     console.error('Claude API error:', errorData);

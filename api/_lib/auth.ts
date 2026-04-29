@@ -1,5 +1,5 @@
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { VercelRequest } from "@vercel/node";
+import { getAdminClient } from "./supabaseAdmin";
 
 /**
  * Thrown when a request is missing valid Supabase auth.
@@ -27,51 +27,6 @@ export interface AuthenticatedUser {
 // Real Supabase access tokens are ~800 bytes. Vercel caps headers at 8 KB
 // anyway; this is belt-and-braces against accidental large-payload calls.
 const MAX_TOKEN_LENGTH = 4096;
-
-// Lazily-initialized service-role client. Cold start cost is paid once
-// per warm Vercel instance; subsequent calls reuse the same client.
-let cachedServiceClient: SupabaseClient | null = null;
-
-function getServiceClient(): SupabaseClient {
-  if (cachedServiceClient) return cachedServiceClient;
-
-  const url = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!url || !serviceRoleKey) {
-    throw new Error(
-      "Supabase service-role client is not configured. " +
-        "Set SUPABASE_URL (or VITE_SUPABASE_URL) and SUPABASE_SERVICE_ROLE_KEY " +
-        "in the server environment.",
-    );
-  }
-
-  if (!process.env.SUPABASE_URL && process.env.VITE_SUPABASE_URL) {
-    // Tracked in LAUNCH_PLAN.md Discovered debt: future PR should add
-    // SUPABASE_URL to Vercel env and remove this fallback so the server
-    // never silently uses a client-side env var.
-    console.warn(
-      "[auth] Using VITE_SUPABASE_URL as server-side fallback. " +
-        "Add SUPABASE_URL to Vercel env vars to remove this warning.",
-    );
-  }
-
-  cachedServiceClient = createClient(url, serviceRoleKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
-  return cachedServiceClient;
-}
-
-/**
- * Test-only helper: clears the cached service client so tests can vary
- * the env vars between cases. Guarded by NODE_ENV so a production caller
- * cannot reset the singleton at runtime — the function is a no-op outside
- * the test environment.
- */
-export function __resetServiceClientForTests(): void {
-  if (process.env.NODE_ENV !== "test") return;
-  cachedServiceClient = null;
-}
 
 function extractBearerToken(req: VercelRequest): string {
   const header = req.headers.authorization;
@@ -105,7 +60,7 @@ export async function verifySupabaseJwt(
   req: VercelRequest,
 ): Promise<AuthenticatedUser> {
   const token = extractBearerToken(req);
-  const client = getServiceClient();
+  const client = getAdminClient();
 
   const { data, error } = await client.auth.getUser(token);
 

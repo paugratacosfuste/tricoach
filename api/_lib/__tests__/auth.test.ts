@@ -14,11 +14,8 @@ vi.mock("@supabase/supabase-js", () => ({
 }));
 
 // Module under test imported AFTER vi.mock so the mock takes effect.
-import {
-  verifySupabaseJwt,
-  UnauthorizedError,
-  __resetServiceClientForTests,
-} from "../auth";
+import { verifySupabaseJwt, UnauthorizedError } from "../auth";
+import { __resetAdminClientForTests } from "../supabaseAdmin";
 
 function makeReq(headers: Record<string, string> = {}): VercelRequest {
   return { headers } as unknown as VercelRequest;
@@ -27,7 +24,7 @@ function makeReq(headers: Record<string, string> = {}): VercelRequest {
 describe("verifySupabaseJwt", () => {
   beforeEach(() => {
     mockGetUser.mockReset();
-    __resetServiceClientForTests();
+    __resetAdminClientForTests();
     process.env.SUPABASE_URL = "https://example.supabase.co";
     process.env.SUPABASE_SERVICE_ROLE_KEY = "fake-service-role-for-tests";
   });
