@@ -126,6 +126,25 @@ describe("scripts/secrets-audit.sh", () => {
     expect(result.out).toMatch(/JWT/i);
   });
 
+  it("does not false-positive on uppercase SERVICE_ROLE_KEY env var references", () => {
+    // SUPABASE_SERVICE_ROLE_KEY is the *env var name* — required boilerplate
+    // wherever the secret is read. The audit must catch only lowercase
+    // `service_role` (the actual role-name literal that appears in JWT
+    // payloads or hardcoded role checks).
+    writeFileSync(
+      join(dir, "config.ts"),
+      "const k = process.env.SUPABASE_SERVICE_ROLE_KEY;\n",
+    );
+    writeFileSync(
+      join(dir, "auth.ts"),
+      "const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;\n",
+    );
+    commit(dir, "env var ref");
+    const result = run(dir);
+    expect(result.code).toBe(0);
+    expect(result.out).toMatch(/AUDIT PASSED/);
+  });
+
   it("does not false-positive when a key appears only in scripts/__tests__/ (excluded)", () => {
     // Simulates this repo's actual situation post-commit: the test file
     // contains fixture keys, and the audit script contains regex literals,

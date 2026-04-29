@@ -15,6 +15,7 @@ import {
   calculateTrainingPhase,
   isRecoveryWeek,
 } from '@/types/training';
+import { supabase } from '@/lib/supabase';
 
 // Get the API key from environment variables
 // NOTE: The API key is now server-side only via Vercel API route.
@@ -423,14 +424,27 @@ export async function generateWeekPlan(
 
   console.log(`Generating Week ${weekNumber} of ${totalWeeks}...`);
 
+  // Attach the user's Supabase access token so the proxy can verify it.
+  // Phase 1.A — server-side JWT auth on /api/generate-week.
+  const { data: sessionData } = await supabase.auth.getSession();
+  const accessToken = sessionData.session?.access_token;
+  if (!accessToken) {
+    throw new Error('Not authenticated. Please log in again.');
+  }
+
   // Call the Vercel API proxy instead of Claude directly
   const response = await fetch('/api/generate-week', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
     },
     body: JSON.stringify({ prompt }),
   });
+
+  if (response.status === 401) {
+    throw new Error('Session expired. Please log in again.');
+  }
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));

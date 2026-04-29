@@ -153,8 +153,12 @@ else
 fi
 
 # Check 6 — Supabase service-role literal in tracked source
+# Case-sensitive on purpose: real role-name leaks are lowercase
+# `service_role` (JWT payloads, role-comparison code). Uppercase
+# `SERVICE_ROLE_KEY` is the env-var name and is required boilerplate
+# wherever the secret is read — not a leak.
 info "Check 6 — Supabase service-role literal in tracked source"
-SR=$(git grep -n -i "$SR_LITERAL_PATTERN" -- "${EXCLUDES[@]}" 2>/dev/null || true)
+SR=$(git grep -n "$SR_LITERAL_PATTERN" -- "${EXCLUDES[@]}" 2>/dev/null || true)
 if [ -z "$SR" ]; then
   pass "no service-role literal in tracked source"
 else
@@ -166,7 +170,7 @@ fi
 # could legitimately appear in docs/migrations referring to the role name).
 info "Check 7 — Supabase service-role literal in git history"
 SR_HIST=$(git log -p --all -S "$SR_LITERAL_PATTERN" --pretty=format: -- "${EXCLUDES[@]}" 2>/dev/null \
-  | grep -i "$SR_LITERAL_PATTERN" \
+  | grep "$SR_LITERAL_PATTERN" \
   | head -3 || true)
 if [ -z "$SR_HIST" ]; then
   pass "no service-role literal in git history"

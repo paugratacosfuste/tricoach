@@ -1,9 +1,22 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { verifySupabaseJwt, UnauthorizedError } from './_lib/auth';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Only allow POST
     if (req.method !== 'POST') {
         return res.status(405).json({ error: 'Method not allowed' });
+    }
+
+    // Authenticate first — any non-POST short-circuit above is fine, but
+    // every authenticated path below must run only after this gate.
+    try {
+        await verifySupabaseJwt(req);
+    } catch (err) {
+        if (err instanceof UnauthorizedError) {
+            return res.status(401).json({ error: 'unauthorized' });
+        }
+        console.error('Auth check failed:', err);
+        return res.status(500).json({ error: 'Server error' });
     }
 
     const { prompt } = req.body;
