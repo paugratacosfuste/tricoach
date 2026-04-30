@@ -1,4 +1,5 @@
-import { getAdminClient } from "./supabaseAdmin";
+// `.js` extension required for Node ESM strict resolution on Vercel.
+import { getAdminClient } from "./supabaseAdmin.js";
 
 /**
  * Thrown when a user has exceeded one of the rate limits. The handler

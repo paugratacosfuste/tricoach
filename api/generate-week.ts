@@ -1,10 +1,13 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { verifySupabaseJwt, UnauthorizedError } from './_lib/auth';
+// `.js` extensions are required: package.json has "type": "module" so Node
+// ESM strict resolution applies to the deployed function. See LAUNCH_PLAN
+// progress log 2026-04-29 for the diagnosis.
+import { verifySupabaseJwt, UnauthorizedError } from './_lib/auth.js';
 import {
   enforceLimits,
   RateLimitError,
   defaultUsageStore,
-} from './_lib/rateLimit';
+} from './_lib/rateLimit.js';
 
 // Anthropic Sonnet 4 pricing (per 1M tokens). Used to compute cost_usd
 // rows for api_usage so future budget tooling can read it directly.

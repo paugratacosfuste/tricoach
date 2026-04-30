@@ -1,5 +1,6 @@
 import type { VercelRequest } from "@vercel/node";
-import { getAdminClient } from "./supabaseAdmin";
+// `.js` extension required for Node ESM strict resolution on Vercel.
+import { getAdminClient } from "./supabaseAdmin.js";
 
 /**
  * Thrown when a request is missing valid Supabase auth.
