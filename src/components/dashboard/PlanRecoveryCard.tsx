@@ -109,7 +109,7 @@ export function PlanRecoveryCard({
         <CardTitle>Your next training week is ready to generate</CardTitle>
         <CardDescription>
           You completed {completedCount} of {plan.totalWeeks} weeks. Generate
-          week {plan.currentWeekNumber} to keep your plan moving.
+          week {completedCount + 1} to keep your plan moving.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-2">

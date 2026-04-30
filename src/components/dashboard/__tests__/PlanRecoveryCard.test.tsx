@@ -131,6 +131,29 @@ describe("PlanRecoveryCard", () => {
     expect(onResetPlan).not.toHaveBeenCalled();
   });
 
+  it("displays the next week number based on completed weeks (not the stale currentWeekNumber)", () => {
+    // Repro: in the recovery state, plan.currentWeekNumber may be stale
+    // (e.g. equal to the just-completed week's number) because the
+    // previous transition didn't get to bump it. The "Generate week N"
+    // copy must reflect what's actually next, derived from completedWeeks.
+    const plan = makePlan({
+      currentWeekNumber: 1, // stale value from a partially-failed transition
+      totalWeeks: 13,
+      completedWeeks: [{ weekNumber: 1 }] as unknown as TrainingPlan["completedWeeks"],
+    });
+    render(
+      <PlanRecoveryCard
+        plan={plan}
+        onGenerateNext={vi.fn()}
+        onResetPlan={vi.fn()}
+        onViewHistory={vi.fn()}
+      />,
+    );
+    // Should advertise week 2 (completedWeeks.length + 1), not week 1.
+    expect(screen.getByText(/generate week 2/i)).toBeInTheDocument();
+    expect(screen.queryByText(/generate week 1\b/i)).not.toBeInTheDocument();
+  });
+
   it("calls onViewHistory when the history button is clicked (gap state)", () => {
     const onViewHistory = vi.fn();
     const plan = makePlan({

@@ -537,7 +537,7 @@ export function TrainingProvider({ children }: { children: ReactNode }) {
    * Complete the current week and generate the next one
    */
   const generateNextWeek = async (feedback: WeekFeedback, constraints?: string): Promise<void> => {
-    if (!plan || !plan.currentWeek || !userData) {
+    if (!plan || !userData) {
       setError('No active plan or user data found');
       return;
     }
@@ -546,52 +546,69 @@ export function TrainingProvider({ children }: { children: ReactNode }) {
     setError(null);
 
     try {
-      // Create completed week record
-      const completedWeek: CompletedWeek = {
-        weekNumber: plan.currentWeek.weekNumber,
-        startDate: plan.currentWeek.startDate,
-        endDate: plan.currentWeek.endDate,
-        phase: plan.currentWeek.phase,
-        theme: plan.currentWeek.theme,
-        focus: plan.currentWeek.focus,
-        totalPlannedHours: plan.currentWeek.totalPlannedHours,
-        workouts: plan.currentWeek.workouts,
-        summary: createWeekSummary(plan.currentWeek, feedback),
-      };
+      // Track the (possibly extended) completed-weeks list and which week
+      // number to generate. Normal path: complete the current week and
+      // bump from currentWeekNumber. Recovery path (currentWeek is null
+      // because a previous transition was interrupted, leaving Supabase
+      // with the old week already marked is_completed): the latest
+      // completed week is already in plan.completedWeeks on reload — we
+      // just need to generate completedWeeks.length + 1.
+      let newCompletedWeeks = plan.completedWeeks;
+      let nextWeekNumber: number;
 
-      // Save feedback to Supabase
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user && plan.id) {
-        // Get the week ID from Supabase
-        const { data: weekRow } = await supabase
-          .from('weeks')
-          .select('id')
-          .eq('plan_id', plan.id)
-          .eq('week_number', plan.currentWeek.weekNumber)
-          .single();
+      if (plan.currentWeek) {
+        // Create completed week record
+        const completedWeek: CompletedWeek = {
+          weekNumber: plan.currentWeek.weekNumber,
+          startDate: plan.currentWeek.startDate,
+          endDate: plan.currentWeek.endDate,
+          phase: plan.currentWeek.phase,
+          theme: plan.currentWeek.theme,
+          focus: plan.currentWeek.focus,
+          totalPlannedHours: plan.currentWeek.totalPlannedHours,
+          workouts: plan.currentWeek.workouts,
+          summary: createWeekSummary(plan.currentWeek, feedback),
+        };
 
-        if (weekRow) {
-          // Mark week as completed
-          await supabase
+        // Save feedback to Supabase
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user && plan.id) {
+          // Get the week ID from Supabase
+          const { data: weekRow } = await supabase
             .from('weeks')
-            .update({ is_completed: true })
-            .eq('id', weekRow.id);
+            .select('id')
+            .eq('plan_id', plan.id)
+            .eq('week_number', plan.currentWeek.weekNumber)
+            .single();
 
-          // Save feedback
-          await supabase
-            .from('week_feedback')
-            .upsert({
-              week_id: weekRow.id,
-              overall_feeling: feedback.overallFeeling,
-              physical_issues: feedback.physicalIssues || null,
-              notes: feedback.notes || null,
-              next_week_constraints: constraints || null,
-            });
+          if (weekRow) {
+            // Mark week as completed
+            await supabase
+              .from('weeks')
+              .update({ is_completed: true })
+              .eq('id', weekRow.id);
+
+            // Save feedback
+            await supabase
+              .from('week_feedback')
+              .upsert({
+                week_id: weekRow.id,
+                overall_feeling: feedback.overallFeeling,
+                physical_issues: feedback.physicalIssues || null,
+                notes: feedback.notes || null,
+                next_week_constraints: constraints || null,
+              });
+          }
         }
-      }
 
-      const newCompletedWeeks = [...plan.completedWeeks, completedWeek];
-      const nextWeekNumber = plan.currentWeekNumber + 1;
+        newCompletedWeeks = [...plan.completedWeeks, completedWeek];
+        nextWeekNumber = plan.currentWeekNumber + 1;
+      } else {
+        // Recovery path: the previous attempt was interrupted between
+        // marking the old week complete and persisting the new one.
+        // plan.completedWeeks already contains the most recent week.
+        nextWeekNumber = plan.completedWeeks.length + 1;
+      }
 
       // Check if we've reached the race
       if (nextWeekNumber > plan.totalWeeks) {
