@@ -15,8 +15,12 @@ const Index = () => {
     return <OnboardingWizard />;
   }
 
-  // If we have a plan, show the dashboard
-  if (plan && plan.currentWeek) {
+  // If we have a plan, show the dashboard. Dashboard handles its own
+  // states — including "plan exists but no current week" via the
+  // PlanRecoveryCard. Sending the user there avoids the stuck-on-Welcome
+  // dead end where the only button (Get Started) had no effect because
+  // `isComplete` was already true.
+  if (plan) {
     return <Dashboard />;
   }
 

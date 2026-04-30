@@ -11,6 +11,7 @@ import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
 import { WorkoutDetailSheet } from '@/components/dashboard/WorkoutDetailSheet';
 import { WeekReview } from '@/components/WeekReview';
 import { RegeneratePlanDialog } from '@/components/RegeneratePlanDialog';
+import { PlanRecoveryCard } from '@/components/dashboard/PlanRecoveryCard';
 import { WeekFeedback, Workout, WorkoutType } from '@/types/training';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -98,6 +99,7 @@ export default function Dashboard() {
     getTodaysWorkout,
     getUpcomingWorkouts,
     generateNextWeek,
+    resetPlan,
   } = useTraining();
 
   const [isReviewOpen, setIsReviewOpen] = useState(false);
@@ -167,8 +169,9 @@ export default function Dashboard() {
     );
   }
 
-  // No plan state
-  if (!plan || !currentWeek) {
+  // No-plan state: brand-new user. Send them to onboarding via the Index
+  // welcome screen.
+  if (!plan) {
     return (
       <DashboardLayout>
         <div className="flex items-center justify-center min-h-[60vh]">
@@ -186,6 +189,41 @@ export default function Dashboard() {
               </Button>
             </CardContent>
           </Card>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  // Plan-but-no-current-week state: race finished, mid-transition gap, or
+  // an anomalous half-saved plan. PlanRecoveryCard picks the right copy +
+  // CTA for each case.
+  if (!currentWeek) {
+    const handleRecoveryGenerate = async () => {
+      setIsGenerating(true);
+      try {
+        // Default neutral feedback — the user is recovering from a state
+        // they didn't choose, so don't gate on a 5-step review form.
+        await generateNextWeek({
+          overallFeeling: 'okay',
+          physicalIssues: [],
+          notes: '',
+        });
+      } catch (err) {
+        console.error('Failed to recover next week:', err);
+      } finally {
+        setIsGenerating(false);
+      }
+    };
+    return (
+      <DashboardLayout>
+        <div className="flex items-center justify-center min-h-[60vh]">
+          <PlanRecoveryCard
+            plan={plan}
+            isLoading={isGenerating}
+            onGenerateNext={handleRecoveryGenerate}
+            onResetPlan={resetPlan}
+            onViewHistory={() => navigate('/history')}
+          />
         </div>
       </DashboardLayout>
     );
