@@ -253,6 +253,45 @@ async function savePlanToSupabase(plan: TrainingPlan, userId: string): Promise<s
   }
 }
 
+/**
+ * Mark a week complete and persist its feedback. Called only after the next
+ * week's Anthropic generation succeeds, so a failed network call cannot leave
+ * Supabase in a half-written "old week complete, new week missing" state. (D1)
+ */
+async function commitWeekCompletion(
+  planId: string,
+  weekNumber: number,
+  feedback: WeekFeedback,
+  constraints?: string,
+): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+
+  const { data: weekRow } = await supabase
+    .from('weeks')
+    .select('id')
+    .eq('plan_id', planId)
+    .eq('week_number', weekNumber)
+    .single();
+
+  if (!weekRow) return;
+
+  await supabase
+    .from('weeks')
+    .update({ is_completed: true })
+    .eq('id', weekRow.id);
+
+  await supabase
+    .from('week_feedback')
+    .upsert({
+      week_id: weekRow.id,
+      overall_feeling: feedback.overallFeeling,
+      physical_issues: feedback.physicalIssues || null,
+      notes: feedback.notes || null,
+      next_week_constraints: constraints || null,
+    });
+}
+
 async function loadPlanFromSupabase(userId: string): Promise<{ plan: TrainingPlan; userData: OnboardingData } | null> {
   try {
     // Get active plan
@@ -543,7 +582,11 @@ export function TrainingProvider({ children }: { children: ReactNode }) {
   };
 
   /**
-   * Complete the current week and generate the next one
+   * Complete the current week and generate the next one.
+   *
+   * Write ordering (D1): Anthropic call first, Supabase mutations only on
+   * success. This prevents a failed network call from leaving Supabase in a
+   * half-written state (old week marked complete, new week missing).
    */
   const generateNextWeek = async (feedback: WeekFeedback, constraints?: string): Promise<void> => {
     if (!plan || !userData) {
@@ -555,72 +598,37 @@ export function TrainingProvider({ children }: { children: ReactNode }) {
     setError(null);
 
     try {
-      // Track the (possibly extended) completed-weeks list and which week
-      // number to generate. Normal path: complete the current week and
-      // bump from currentWeekNumber. Recovery path (currentWeek is null
-      // because a previous transition was interrupted, leaving Supabase
-      // with the old week already marked is_completed): the latest
-      // completed week is already in plan.completedWeeks on reload — we
-      // just need to generate completedWeeks.length + 1.
-      let newCompletedWeeks = plan.completedWeeks;
-      let nextWeekNumber: number;
-
-      if (plan.currentWeek) {
-        // Create completed week record
-        const completedWeek: CompletedWeek = {
-          weekNumber: plan.currentWeek.weekNumber,
-          startDate: plan.currentWeek.startDate,
-          endDate: plan.currentWeek.endDate,
-          phase: plan.currentWeek.phase,
-          theme: plan.currentWeek.theme,
-          focus: plan.currentWeek.focus,
-          totalPlannedHours: plan.currentWeek.totalPlannedHours,
-          workouts: plan.currentWeek.workouts,
-          summary: createWeekSummary(plan.currentWeek, feedback),
-        };
-
-        // Save feedback to Supabase
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user && plan.id) {
-          // Get the week ID from Supabase
-          const { data: weekRow } = await supabase
-            .from('weeks')
-            .select('id')
-            .eq('plan_id', plan.id)
-            .eq('week_number', plan.currentWeek.weekNumber)
-            .single();
-
-          if (weekRow) {
-            // Mark week as completed
-            await supabase
-              .from('weeks')
-              .update({ is_completed: true })
-              .eq('id', weekRow.id);
-
-            // Save feedback
-            await supabase
-              .from('week_feedback')
-              .upsert({
-                week_id: weekRow.id,
-                overall_feeling: feedback.overallFeeling,
-                physical_issues: feedback.physicalIssues || null,
-                notes: feedback.notes || null,
-                next_week_constraints: constraints || null,
-              });
+      // Build the candidate completed-week record in memory (no DB writes yet).
+      // Recovery path: currentWeek is null because a previous transition was
+      // interrupted; plan.completedWeeks already contains the latest week.
+      const completedWeek: CompletedWeek | null = plan.currentWeek
+        ? {
+            weekNumber: plan.currentWeek.weekNumber,
+            startDate: plan.currentWeek.startDate,
+            endDate: plan.currentWeek.endDate,
+            phase: plan.currentWeek.phase,
+            theme: plan.currentWeek.theme,
+            focus: plan.currentWeek.focus,
+            totalPlannedHours: plan.currentWeek.totalPlannedHours,
+            workouts: plan.currentWeek.workouts,
+            summary: createWeekSummary(plan.currentWeek, feedback),
           }
-        }
+        : null;
 
-        newCompletedWeeks = [...plan.completedWeeks, completedWeek];
-        nextWeekNumber = plan.currentWeekNumber + 1;
-      } else {
-        // Recovery path: the previous attempt was interrupted between
-        // marking the old week complete and persisting the new one.
-        // plan.completedWeeks already contains the most recent week.
-        nextWeekNumber = plan.completedWeeks.length + 1;
-      }
+      const newCompletedWeeks = completedWeek
+        ? [...plan.completedWeeks, completedWeek]
+        : plan.completedWeeks;
 
-      // Check if we've reached the race
+      const nextWeekNumber = plan.currentWeek
+        ? plan.currentWeekNumber + 1
+        : plan.completedWeeks.length + 1;
+
+      // Race-end path: no Anthropic call needed. Mark old week complete + save
+      // feedback, then update plan.
       if (nextWeekNumber > plan.totalWeeks) {
+        if (plan.currentWeek && plan.id) {
+          await commitWeekCompletion(plan.id, plan.currentWeek.weekNumber, feedback, constraints);
+        }
         setPlan({
           ...plan,
           currentWeekNumber: nextWeekNumber,
@@ -630,7 +638,7 @@ export function TrainingProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      // Generate next week
+      // 1. Anthropic call FIRST. If this throws, no Supabase writes happen.
       const nextWeek = await generateWeekPlan(
         userData,
         nextWeekNumber,
@@ -639,7 +647,12 @@ export function TrainingProvider({ children }: { children: ReactNode }) {
         constraints
       );
 
-      // Update plan
+      // 2. Anthropic succeeded → now mark old week complete + save feedback.
+      if (plan.currentWeek && plan.id) {
+        await commitWeekCompletion(plan.id, plan.currentWeek.weekNumber, feedback, constraints);
+      }
+
+      // 3. Update plan (autosave persists the new week).
       setPlan({
         ...plan,
         currentWeekNumber: nextWeekNumber,

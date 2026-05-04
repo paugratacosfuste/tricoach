@@ -2,7 +2,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import React from 'react';
 import { TrainingProvider, useTraining } from '../TrainingContext';
-import type { Workout, WeekPlan, TrainingPlan } from '@/types/training';
+import type { Workout, TrainingPlan, OnboardingData, WeekSummary } from '@/types/training';
+import { supabase } from '@/lib/supabase';
+import { generateWeekPlan, createWeekSummary } from '@/lib/claudeApi';
 
 // Mock supabase
 vi.mock('@/lib/supabase', () => ({
@@ -84,6 +86,56 @@ function seedPlanInStorage(workouts: Workout[]) {
     completedWeeks: [],
   };
   localStorageMock.setItem('tricoach-training-plan', JSON.stringify(plan));
+}
+
+function seedUserDataInStorage(): void {
+  const userData: OnboardingData = {
+    profile: { firstName: 'Test', age: 30, gender: 'male', weight: 70, height: 175 },
+    fitness: { fitnessLevel: 'intermediate', lthr: 160, thresholdPace: '5:30', maxHR: 185, swimLevel: 'comfortable' },
+    goal: { raceType: 'olympic-triathlon', raceName: 'Test Race', raceDate: new Date('2025-09-01'), priority: 'finish' },
+    availability: {
+      monday: { available: true, timeSlots: ['evening'], maxDuration: '60min' },
+      tuesday: { available: true, timeSlots: ['evening'], maxDuration: '60min' },
+      wednesday: { available: true, timeSlots: ['evening'], maxDuration: '60min' },
+      thursday: { available: true, timeSlots: ['evening'], maxDuration: '60min' },
+      friday: { available: false, timeSlots: [], maxDuration: '30min' },
+      saturday: { available: true, timeSlots: ['morning'], maxDuration: '2h', longSession: true },
+      sunday: { available: true, timeSlots: ['morning'], maxDuration: '2h30', longSession: true },
+      weeklyHoursTarget: '8-10h',
+    },
+    integrations: {
+      googleCalendar: { connected: false, avoidConflicts: true },
+      strava: { connected: false, autoComplete: true },
+    },
+  };
+  localStorageMock.setItem('tricoach-user-data', JSON.stringify(userData));
+}
+
+function makeSupabaseMock(overrides: { weekRowId?: string | null } = {}) {
+  const weekRowId = overrides.weekRowId ?? null;
+  const updateSpy = vi.fn().mockReturnValue({
+    eq: vi.fn().mockResolvedValue({ data: null, error: null }),
+  });
+  const upsertSpy = vi.fn().mockResolvedValue({ data: null, error: null });
+
+  vi.mocked(supabase.from).mockImplementation((table: string) => ({
+    select: vi.fn().mockReturnThis(),
+    update: updateSpy,
+    upsert: upsertSpy,
+    insert: vi.fn().mockReturnThis(),
+    delete: vi.fn().mockReturnThis(),
+    eq: vi.fn().mockReturnThis(),
+    in: vi.fn().mockReturnThis(),
+    order: vi.fn().mockReturnThis(),
+    limit: vi.fn().mockReturnThis(),
+    single: vi.fn().mockResolvedValue({
+      data: table === 'weeks' && weekRowId ? { id: weekRowId } : null,
+      error: null,
+    }),
+    maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+  } as unknown as ReturnType<typeof supabase.from>));
+
+  return { updateSpy, upsertSpy };
 }
 
 function wrapper({ children }: { children: React.ReactNode }) {
@@ -271,6 +323,82 @@ describe('TrainingContext', () => {
 
       expect(result.current.plan).toBeNull();
       expect(localStorageMock.removeItem).toHaveBeenCalledWith('tricoach-training-plan');
+    });
+  });
+
+  // ── D1: write-ordering invariant ────────────────────────────────────────
+  describe('generateNextWeek — write ordering (D1)', () => {
+    const mockSummary: WeekSummary = {
+      weekNumber: 3,
+      phase: 'Base',
+      theme: 'Base Building',
+      plannedHours: 6,
+      completedHours: 0,
+      completionRate: 0,
+      keyWorkouts: [],
+      feedback: { overallFeeling: 'good', physicalIssues: [], notes: '' },
+    };
+
+    it('does NOT write is_completed=true to Supabase when generateWeekPlan throws', async () => {
+      vi.mocked(generateWeekPlan).mockRejectedValue(new Error('Anthropic down'));
+      vi.mocked(createWeekSummary).mockReturnValue(mockSummary);
+
+      // week-db-id simulates Supabase returning the week row so the update
+      // path would be reachable in the old (broken) ordering
+      const { updateSpy } = makeSupabaseMock({ weekRowId: 'week-db-id' });
+
+      seedPlanInStorage([createTestWorkout()]);
+      seedUserDataInStorage();
+
+      const { result } = renderHook(() => useTraining(), { wrapper });
+      await act(async () => {}); // allow initial load
+
+      await act(async () => {
+        await result.current.generateNextWeek({
+          overallFeeling: 'good',
+          physicalIssues: [],
+          notes: '',
+        });
+      });
+
+      expect(result.current.error).toBe('Anthropic down');
+      expect(updateSpy).not.toHaveBeenCalledWith({ is_completed: true });
+    });
+
+    it('writes is_completed=true only after generateWeekPlan succeeds', async () => {
+      const nextWeekMock = {
+        weekNumber: 4,
+        startDate: new Date(),
+        endDate: new Date(),
+        theme: 'Next',
+        focus: 'Speed',
+        phase: 'Build',
+        totalPlannedHours: 7,
+        isRecoveryWeek: false,
+        workouts: [],
+      };
+      vi.mocked(generateWeekPlan).mockResolvedValue(nextWeekMock);
+      vi.mocked(createWeekSummary).mockReturnValue(mockSummary);
+
+      const { updateSpy } = makeSupabaseMock({ weekRowId: 'week-db-id' });
+
+      seedPlanInStorage([createTestWorkout()]);
+      seedUserDataInStorage();
+
+      const { result } = renderHook(() => useTraining(), { wrapper });
+      await act(async () => {});
+
+      await act(async () => {
+        await result.current.generateNextWeek({
+          overallFeeling: 'good',
+          physicalIssues: [],
+          notes: '',
+        });
+      });
+
+      expect(result.current.error).toBeNull();
+      expect(updateSpy).toHaveBeenCalledWith({ is_completed: true });
+      expect(result.current.plan?.currentWeek?.weekNumber).toBe(4);
     });
   });
 });
