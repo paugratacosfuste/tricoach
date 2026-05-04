@@ -88,7 +88,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             }),
         });
 
-        const data = await response.json();
+        const data = (await response.json()) as {
+            usage?: { input_tokens?: number; output_tokens?: number };
+            [k: string]: unknown;
+        };
 
         if (!response.ok) {
             console.error('Claude API error:', response.status, data);
@@ -98,10 +101,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // 5. Record successful call in api_usage so the rate limiter sees
         // it on subsequent requests. Failures here log but do not block
         // the response — the user already has their plan.
-        const usage = (data?.usage ?? {}) as {
-            input_tokens?: number;
-            output_tokens?: number;
-        };
+        const usage = data.usage ?? {};
         const inputTokens = usage.input_tokens ?? 0;
         const outputTokens = usage.output_tokens ?? 0;
         try {
