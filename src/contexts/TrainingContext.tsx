@@ -15,6 +15,7 @@ import {
   WorkoutStatus,
 } from '@/types/training';
 import { generateWeekPlan, createWeekSummary } from '@/lib/claudeApi';
+import { mapWeekFeedbackRows, DEFAULT_REHYDRATED_FEEDBACK } from './loadPlanHelpers';
 import { supabase } from '@/lib/supabase';
 
 // ============================================
@@ -323,6 +324,15 @@ async function loadPlanFromSupabase(userId: string): Promise<{ plan: TrainingPla
       .in('week_id', weekIds.length > 0 ? weekIds : ['none'])
       .order('date', { ascending: true });
 
+    // Get all feedback rows for all weeks (D6: rehydrate real feedback so
+    // claudeApi.buildHistoryContext receives genuine fatigue/injury cues
+    // across page reloads, not hardcoded "okay" defaults).
+    const { data: feedbackRows } = await supabase
+      .from('week_feedback')
+      .select('*')
+      .in('week_id', weekIds.length > 0 ? weekIds : ['none']);
+    const feedbackByWeekId = mapWeekFeedbackRows(feedbackRows || []);
+
     // Get user profile for userData
     const { data: profileRow } = await supabase
       .from('profiles')
@@ -382,6 +392,9 @@ async function loadPlanFromSupabase(userId: string): Promise<{ plan: TrainingPla
 
     const completedWeeks: CompletedWeek[] = completedWeekRows.map(w => {
       const weekPlan = buildWeekPlan(w);
+      // D6: prefer real feedback row when present; fall back to the safe
+      // default only when the user never submitted feedback for this week.
+      const feedback = feedbackByWeekId[w.id] ?? DEFAULT_REHYDRATED_FEEDBACK;
       return {
         ...weekPlan,
         summary: {
@@ -392,16 +405,7 @@ async function loadPlanFromSupabase(userId: string): Promise<{ plan: TrainingPla
           completedHours: 0,
           completionRate: 0,
           keyWorkouts: [],
-          // Always populate physicalIssues + notes so downstream consumers
-          // (claudeApi.buildHistoryContext) can read them safely. The
-          // hardcoded overallFeeling 'okay' is a Discovered debt — Supabase
-          // load doesn't yet rehydrate the real feedback rows from
-          // week_feedback. Tracked for a follow-up.
-          feedback: {
-            overallFeeling: 'okay' as const,
-            physicalIssues: [],
-            notes: '',
-          },
+          feedback,
         },
       };
     });
