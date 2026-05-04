@@ -353,7 +353,16 @@ async function loadPlanFromSupabase(userId: string): Promise<{ plan: TrainingPla
           completedHours: 0,
           completionRate: 0,
           keyWorkouts: [],
-          feedback: { overallFeeling: 'okay' as const },
+          // Always populate physicalIssues + notes so downstream consumers
+          // (claudeApi.buildHistoryContext) can read them safely. The
+          // hardcoded overallFeeling 'okay' is a Discovered debt — Supabase
+          // load doesn't yet rehydrate the real feedback rows from
+          // week_feedback. Tracked for a follow-up.
+          feedback: {
+            overallFeeling: 'okay' as const,
+            physicalIssues: [],
+            notes: '',
+          },
         },
       };
     });

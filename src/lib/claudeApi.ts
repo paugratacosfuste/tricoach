@@ -45,16 +45,23 @@ export function buildHistoryContext(completedWeeks: CompletedWeek[]): string {
         .map((k) => `${k.name} ${k.completed ? '✓' : '✗'}${k.notes ? ` (${k.notes})` : ''}`)
         .join(', ');
 
+      // Defensive accessors — if a CompletedWeek was rehydrated from
+      // Supabase before the feedback shape was fully populated, these
+      // fields can be missing. Fall back to safe defaults so the prompt
+      // still renders rather than throwing.
+      const physicalIssues = week.summary.feedback?.physicalIssues ?? [];
+      const notes = week.summary.feedback?.notes ?? '';
+      const overallFeeling = week.summary.feedback?.overallFeeling ?? 'okay';
       parts.push(
         `- Week ${week.weekNumber} (${week.phase}): ` +
         `${week.summary.completedHours.toFixed(1)}h of ${week.summary.plannedHours.toFixed(1)}h ` +
         `(${week.summary.completionRate}% completion). ` +
         `Key sessions: ${keyWorkoutsStr}. ` +
-        `Feeling: ${week.summary.feedback.overallFeeling}. ` +
-        (week.summary.feedback.physicalIssues.length > 0
-          ? `Issues: ${week.summary.feedback.physicalIssues.join(', ')}. `
+        `Feeling: ${overallFeeling}. ` +
+        (physicalIssues.length > 0
+          ? `Issues: ${physicalIssues.join(', ')}. `
           : '') +
-        (week.summary.feedback.notes ? `Notes: "${week.summary.feedback.notes}"` : '')
+        (notes ? `Notes: "${notes}"` : '')
       );
     });
   }
