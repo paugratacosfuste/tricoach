@@ -4,7 +4,7 @@
 // Displays today's workout, weekly overview, and upcoming sessions.
 // Includes the "Complete Week" button to trigger week review.
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTraining } from '@/contexts/TrainingContext';
 import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
@@ -100,12 +100,17 @@ export default function Dashboard() {
     getUpcomingWorkouts,
     generateNextWeek,
     resetPlan,
+    resetPlanForNewRace,
   } = useTraining();
 
   const [isReviewOpen, setIsReviewOpen] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isRegenerateOpen, setIsRegenerateOpen] = useState(false);
   const [isRegenerating, setIsRegenerating] = useState(false);
+  // D5: synchronous re-entry gate so a quick double-click or strict-mode
+  // unmount/remount can't trigger a second generateNextWeek. The useState
+  // above is for UI rendering only.
+  const generatingRef = useRef(false);
 
   // Workout detail sheet state
   const [selectedWorkout, setSelectedWorkout] = useState<Workout | null>(null);
@@ -113,6 +118,8 @@ export default function Dashboard() {
 
   // Handle week review submission
   const handleWeekReviewSubmit = async (feedback: WeekFeedback, constraints?: string) => {
+    if (generatingRef.current) return; // D5
+    generatingRef.current = true;
     setIsGenerating(true);
     try {
       await generateNextWeek(feedback, constraints);
@@ -120,6 +127,7 @@ export default function Dashboard() {
     } catch (err) {
       console.error('Failed to generate next week:', err);
     } finally {
+      generatingRef.current = false;
       setIsGenerating(false);
     }
   };
@@ -199,6 +207,11 @@ export default function Dashboard() {
   // CTA for each case.
   if (!currentWeek) {
     const handleRecoveryGenerate = async () => {
+      // D5: deterministic re-entry gate. setIsGenerating(true) below races
+      // against the click event when the user double-taps; the ref check
+      // is synchronous so the second invocation no-ops immediately.
+      if (generatingRef.current) return;
+      generatingRef.current = true;
       setIsGenerating(true);
       try {
         // Default neutral feedback — the user is recovering from a state
@@ -211,8 +224,13 @@ export default function Dashboard() {
       } catch (err) {
         console.error('Failed to recover next week:', err);
       } finally {
+        generatingRef.current = false;
         setIsGenerating(false);
       }
+    };
+    const handleStartNewPlan = () => {
+      resetPlanForNewRace();
+      navigate('/');
     };
     return (
       <DashboardLayout>
@@ -223,6 +241,7 @@ export default function Dashboard() {
             onGenerateNext={handleRecoveryGenerate}
             onResetPlan={resetPlan}
             onViewHistory={() => navigate('/history')}
+            onStartNewPlan={handleStartNewPlan}
           />
         </div>
       </DashboardLayout>

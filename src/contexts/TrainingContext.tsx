@@ -48,6 +48,12 @@ interface TrainingContextType {
   // Utilities
   clearError: () => void;
   resetPlan: () => void;
+  /**
+   * Wipe the current plan but PRESERVE the user's onboarding/fitness data
+   * so they can re-onboard for a new race without re-entering LTHR,
+   * threshold pace, etc. (D2 — race-complete "Start a new plan" CTA.)
+   */
+  resetPlanForNewRace: () => void;
 }
 
 const TrainingContext = createContext<TrainingContextType | undefined>(undefined);
@@ -927,6 +933,26 @@ export function TrainingProvider({ children }: { children: ReactNode }) {
     })();
   };
 
+  /**
+   * Wipe just the plan, keep userData (fitness profile etc.) so the user
+   * can pick a new race without re-doing the fitness questionnaire. (D2)
+   */
+  const resetPlanForNewRace = (): void => {
+    setPlan(null);
+    localStorage.removeItem(STORAGE_KEYS.PLAN);
+
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await supabase
+          .from('training_plans')
+          .update({ is_active: false })
+          .eq('user_id', user.id)
+          .eq('is_active', true);
+      }
+    })();
+  };
+
   return (
     <TrainingContext.Provider
       value={{
@@ -946,6 +972,7 @@ export function TrainingProvider({ children }: { children: ReactNode }) {
         completeCurrentWeek,
         clearError,
         resetPlan,
+        resetPlanForNewRace,
       }}
     >
       {children}
