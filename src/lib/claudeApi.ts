@@ -16,6 +16,7 @@ import {
   isRecoveryWeek,
 } from '@/types/training';
 import { supabase } from '@/lib/supabase';
+import { getFreshAccessToken } from '@/lib/auth/freshToken';
 
 // Get the API key from environment variables
 // NOTE: The API key is now server-side only via Vercel API route.
@@ -433,11 +434,9 @@ export async function generateWeekPlan(
 
   // Attach the user's Supabase access token so the proxy can verify it.
   // Phase 1.A — server-side JWT auth on /api/generate-week.
-  const { data: sessionData } = await supabase.auth.getSession();
-  const accessToken = sessionData.session?.access_token;
-  if (!accessToken) {
-    throw new Error('Not authenticated. Please log in again.');
-  }
+  // Item-8 — proactively refresh if the cached token is within 60s of expiry
+  // so an idle tab doesn't get a 401 back from the proxy.
+  const accessToken = await getFreshAccessToken(supabase.auth);
 
   // Call the Vercel API proxy instead of Claude directly
   const response = await fetch('/api/generate-week', {
