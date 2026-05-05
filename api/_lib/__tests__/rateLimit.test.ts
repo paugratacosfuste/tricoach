@@ -4,8 +4,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   enforceLimits,
   RateLimitError,
+  defaultUsageStore,
   type UsageStore,
 } from "../rateLimit";
+
+vi.mock("../supabaseAdmin.js", () => ({
+  getAdminClient: vi.fn(),
+}));
+const { getAdminClient } = await import("../supabaseAdmin.js");
 
 interface FakeStore extends UsageStore {
   countSuccessfulCalls: ReturnType<typeof vi.fn>;
@@ -137,5 +143,80 @@ describe("RateLimitError", () => {
     expect(err.limitType).toBe("hourly");
     expect(err.retryAfterSeconds).toBe(3600);
     expect(err.message).toContain("rate_limit");
+  });
+});
+
+// ── Item-9: api_usage INSERT retry ───────────────────────────────────────
+describe("defaultUsageStore.recordCall — retry on transient INSERT failure (Item-9)", () => {
+  const sampleInput = {
+    userId: "u1",
+    endpoint: "generate-week",
+    status: 200,
+    inputTokens: 100,
+    outputTokens: 200,
+    costUsd: 0.0033,
+  } as const;
+
+  function mockInsertResults(results: Array<{ error: { message: string } | null }>): {
+    insertSpy: ReturnType<typeof vi.fn>;
+  } {
+    const insertSpy = vi.fn();
+    results.forEach((r) => insertSpy.mockResolvedValueOnce(r));
+    vi.mocked(getAdminClient).mockReturnValue({
+      from: vi.fn().mockReturnValue({ insert: insertSpy }),
+    } as never);
+    return { insertSpy };
+  }
+
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    warnSpy.mockRestore();
+    vi.useRealTimers();
+  });
+
+  it("succeeds on first attempt — no retry, no warn", async () => {
+    const { insertSpy } = mockInsertResults([{ error: null }]);
+    await expect(defaultUsageStore().recordCall(sampleInput)).resolves.toBeUndefined();
+    expect(insertSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it("retries once when first INSERT fails and resolves silently when retry succeeds", async () => {
+    vi.useFakeTimers();
+    const { insertSpy } = mockInsertResults([
+      { error: { message: "connection reset" } },
+      { error: null },
+    ]);
+    const promise = defaultUsageStore().recordCall(sampleInput);
+    await vi.advanceTimersByTimeAsync(200);
+    await expect(promise).resolves.toBeUndefined();
+    expect(insertSpy).toHaveBeenCalledTimes(2);
+    expect(warnSpy).toHaveBeenCalledOnce();
+    expect(warnSpy.mock.calls[0][0]).toContain("api_usage insert attempt 1 failed");
+  });
+
+  it("throws after both attempts fail (handler is responsible for swallowing it)", async () => {
+    vi.useFakeTimers();
+    const { insertSpy } = mockInsertResults([
+      { error: { message: "first fail" } },
+      { error: { message: "second fail" } },
+    ]);
+    // Attach a catch synchronously so advancing timers can't trigger an
+    // unhandled-rejection before the expectation gets a chance to await it.
+    const captured = defaultUsageStore()
+      .recordCall(sampleInput)
+      .then(() => null)
+      .catch((e: Error) => e);
+    await vi.advanceTimersByTimeAsync(200);
+    const err = await captured;
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toMatch(/api_usage insert failed after retry: second fail/);
+    expect(insertSpy).toHaveBeenCalledTimes(2);
+    expect(warnSpy).toHaveBeenCalledOnce();
   });
 });

@@ -47,6 +47,7 @@ const THIRTY_DAYS_SECONDS = 30 * DAY_SECONDS;
 const DEFAULT_HOURLY_LIMIT = 10;
 const DEFAULT_DAILY_LIMIT = 30;
 const DEFAULT_MONTHLY_TOKEN_BUDGET = 500_000;
+const RECORD_CALL_RETRY_DELAY_MS = 200;
 
 function readEnvInt(name: string, fallback: number): number {
   const raw = process.env[name];
@@ -160,17 +161,35 @@ export function defaultUsageStore(): UsageStore {
 
     async recordCall(input) {
       const client = getAdminClient();
-      const { error } = await client.from("api_usage").insert({
+      const payload = {
         user_id: input.userId,
         endpoint: input.endpoint,
         status: input.status,
         input_tokens: input.inputTokens,
         output_tokens: input.outputTokens,
         cost_usd: input.costUsd,
+      };
+
+      // Item-9: retry once on transient failure. If only the first attempt
+      // fails, the rate limiter would silently undercount this user's usage
+      // until the retry lands. After both fail we throw so the caller can
+      // surface a structured error (the handler swallows it for UX, but the
+      // log line below carries enough context for Sentry/Phase-5.D triage).
+      const first = await client.from("api_usage").insert(payload);
+      if (!first.error) return;
+
+      console.warn("api_usage insert attempt 1 failed, retrying:", {
+        userId: input.userId,
+        endpoint: input.endpoint,
+        error: first.error.message,
       });
-      if (error) {
-        throw new Error(`api_usage insert failed: ${error.message}`);
-      }
+
+      await new Promise((resolve) => setTimeout(resolve, RECORD_CALL_RETRY_DELAY_MS));
+
+      const second = await client.from("api_usage").insert(payload);
+      if (!second.error) return;
+
+      throw new Error(`api_usage insert failed after retry: ${second.error.message}`);
     },
   };
 }
