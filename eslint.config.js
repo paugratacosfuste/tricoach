@@ -23,4 +23,24 @@ export default tseslint.config(
       "@typescript-eslint/no-unused-vars": "off",
     },
   },
+  // Item-13: src/ (browser bundle) must not import api/ (server-only).
+  // The api/_lib/* modules wire the Supabase service-role key — leaking
+  // them into the client bundle would expose RLS-bypass credentials.
+  {
+    files: ["src/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["**/api/**", "../api/**", "../../api/**", "../../../api/**"],
+              message:
+                "src/ code must not import server-only api/ modules — they wire the Supabase service-role key and only run in the Vercel Node runtime. Move shared logic to src/lib/ or duplicate the type. (Item-13)",
+            },
+          ],
+        },
+      ],
+    },
+  },
 );
