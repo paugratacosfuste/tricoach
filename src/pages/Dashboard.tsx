@@ -443,7 +443,13 @@ export default function Dashboard() {
                 <Calendar className="w-4 h-4 mr-2" />
                 View Full Calendar
               </Button>
+              {/* Wave 6.5: demoted from primary orange CTA to secondary
+                  outline. The label now describes what happens ("plan
+                  next week") instead of coercing the user to act
+                  ("complete week & generate next"). Phase 7 deletes this
+                  button entirely once the Sunday cron handles rollover. */}
               <Button
+                variant="outline"
                 className="flex-1"
                 onClick={() => setIsReviewOpen(true)}
                 disabled={isLoading}
@@ -453,7 +459,7 @@ export default function Dashboard() {
                 ) : (
                   <RefreshCw className="w-4 h-4 mr-2" />
                 )}
-                Complete Week & Generate Next
+                Plan next week
               </Button>
             </div>
             <Button
@@ -466,7 +472,7 @@ export default function Dashboard() {
               Request Plan Change
             </Button>
             <p className="text-xs text-muted-foreground text-center mt-3">
-              Complete your week review to get a personalized plan for next week.
+              Your next week generates after you finish a week review.
             </p>
           </CardContent>
         </Card>

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import React from 'react';
 import { TrainingProvider, useTraining } from '../TrainingContext';
@@ -399,6 +399,197 @@ describe('TrainingContext', () => {
       expect(result.current.error).toBeNull();
       expect(updateSpy).toHaveBeenCalledWith({ is_completed: true });
       expect(result.current.plan?.currentWeek?.weekNumber).toBe(4);
+    });
+  });
+
+  // ── Wave 6.5: rebuildPlanForGoal + syncUserGoal ──────────────────────────
+  describe('rebuildPlanForGoal (Wave 6.5)', () => {
+    const fakeNewWeek = {
+      weekNumber: 1,
+      startDate: new Date('2026-05-11'),
+      endDate: new Date('2026-05-17'),
+      theme: 'Foundation',
+      focus: 'Aerobic',
+      phase: 'Base',
+      totalPlannedHours: 6,
+      isRecoveryWeek: false,
+      workouts: [],
+    };
+
+    function seedUserDataWithGoal(raceDateISO: string): void {
+      const stored = JSON.parse(
+        localStorageMock.getItem('tricoach-user-data') || '{}',
+      );
+      stored.goal = {
+        ...(stored.goal ?? {}),
+        raceType: 'ironman-70.3',
+        raceName: 'Test Race',
+        raceDate: new Date(raceDateISO),
+        priority: 'finish',
+      };
+      localStorageMock.setItem('tricoach-user-data', JSON.stringify(stored));
+    }
+
+    beforeEach(() => {
+      // Freeze "today" so differenceInWeeks is deterministic.
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-05-06T12:00:00Z'));
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('recomputes totalWeeks from raceDate (mid-range case)', async () => {
+      vi.mocked(generateWeekPlan).mockResolvedValue(fakeNewWeek);
+      makeSupabaseMock({ weekRowId: 'week-db-id' });
+
+      seedPlanInStorage([createTestWorkout()]);
+      seedUserDataInStorage();
+      // 21 weeks from frozen now (2026-05-06 → 2026-09-30)
+      seedUserDataWithGoal('2026-09-30');
+
+      const { result } = renderHook(() => useTraining(), { wrapper });
+      await act(async () => {});
+
+      await act(async () => {
+        await result.current.rebuildPlanForGoal();
+      });
+
+      expect(result.current.error).toBeNull();
+      // 21 weeks falls within the 8–24 clamp.
+      expect(result.current.plan?.totalWeeks).toBe(21);
+    });
+
+    it('clamps to a minimum of 8 weeks when race is too close', async () => {
+      vi.mocked(generateWeekPlan).mockResolvedValue(fakeNewWeek);
+      makeSupabaseMock({ weekRowId: 'week-db-id' });
+
+      seedPlanInStorage([createTestWorkout()]);
+      seedUserDataInStorage();
+      // 4 weeks out — below the 8-week floor.
+      seedUserDataWithGoal('2026-06-03');
+
+      const { result } = renderHook(() => useTraining(), { wrapper });
+      await act(async () => {});
+
+      await act(async () => {
+        await result.current.rebuildPlanForGoal();
+      });
+
+      expect(result.current.plan?.totalWeeks).toBe(8);
+    });
+
+    it('clamps to a maximum of 24 weeks when race is far away', async () => {
+      vi.mocked(generateWeekPlan).mockResolvedValue(fakeNewWeek);
+      makeSupabaseMock({ weekRowId: 'week-db-id' });
+
+      seedPlanInStorage([createTestWorkout()]);
+      seedUserDataInStorage();
+      // 30 weeks out — above the 24-week ceiling.
+      seedUserDataWithGoal('2026-12-02');
+
+      const { result } = renderHook(() => useTraining(), { wrapper });
+      await act(async () => {});
+
+      await act(async () => {
+        await result.current.rebuildPlanForGoal();
+      });
+
+      expect(result.current.plan?.totalWeeks).toBe(24);
+    });
+
+    it('preserves completedWeeks when rebuilding', async () => {
+      vi.mocked(generateWeekPlan).mockResolvedValue(fakeNewWeek);
+      makeSupabaseMock({ weekRowId: 'week-db-id' });
+
+      // Seed plan with 2 completed weeks already in storage.
+      const planJson = JSON.parse(
+        JSON.stringify({
+          id: 'test-plan',
+          createdAt: new Date('2025-03-01'),
+          raceName: 'Old Race',
+          raceDate: new Date('2025-09-01'),
+          raceType: 'olympic-triathlon',
+          totalWeeks: 13,
+          currentWeekNumber: 3,
+          currentWeek: {
+            weekNumber: 3,
+            startDate: new Date('2025-03-10'),
+            endDate: new Date('2025-03-16'),
+            theme: 'Base Building',
+            focus: 'Aerobic',
+            phase: 'Base',
+            totalPlannedHours: 6,
+            isRecoveryWeek: false,
+            workouts: [],
+          },
+          completedWeeks: [
+            {
+              weekNumber: 1,
+              startDate: new Date('2025-02-24'),
+              endDate: new Date('2025-03-02'),
+              theme: 'W1',
+              focus: 'Aerobic',
+              phase: 'Base',
+              totalPlannedHours: 6,
+              workouts: [],
+              summary: { feedback: { overallFeeling: 'okay', physicalIssues: [], notes: '' } },
+            },
+            {
+              weekNumber: 2,
+              startDate: new Date('2025-03-03'),
+              endDate: new Date('2025-03-09'),
+              theme: 'W2',
+              focus: 'Aerobic',
+              phase: 'Base',
+              totalPlannedHours: 6,
+              workouts: [],
+              summary: { feedback: { overallFeeling: 'good', physicalIssues: [], notes: '' } },
+            },
+          ],
+        }),
+      );
+      localStorageMock.setItem('tricoach-training-plan', JSON.stringify(planJson));
+      seedUserDataInStorage();
+      seedUserDataWithGoal('2026-09-30');
+
+      const { result } = renderHook(() => useTraining(), { wrapper });
+      await act(async () => {});
+
+      await act(async () => {
+        await result.current.rebuildPlanForGoal();
+      });
+
+      expect(result.current.plan?.completedWeeks).toHaveLength(2);
+    });
+  });
+
+  describe('syncUserGoal (Wave 6.5)', () => {
+    it('updates userData.goal in memory so the AI prompt sees the new race without refresh', async () => {
+      seedPlanInStorage([createTestWorkout()]);
+      seedUserDataInStorage();
+
+      const { result } = renderHook(() => useTraining(), { wrapper });
+      await act(async () => {});
+
+      await act(async () => {
+        result.current.syncUserGoal({
+          raceType: 'ironman-70.3',
+          raceName: 'Platja D\'Aro Ironman',
+          raceDate: new Date('2026-10-04'),
+          priority: 'finish',
+        });
+      });
+
+      // Verify the next call to generateWeekPlan would receive the new goal:
+      // we read the persisted localStorage cache (which generateNextWeek would
+      // also pull from on a fresh mount).
+      const cached = JSON.parse(
+        localStorageMock.getItem('tricoach-user-data') || '{}',
+      );
+      expect(cached.goal.raceType).toBe('ironman-70.3');
+      expect(cached.goal.raceName).toBe('Platja D\'Aro Ironman');
     });
   });
 });

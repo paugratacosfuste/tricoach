@@ -8,17 +8,8 @@ import { Target, Calendar, Trophy, Clock, MapPin, TrendingUp, Edit3, Save, X, Lo
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogCancel,
-  AlertDialogAction,
-} from '@/components/ui/alert-dialog';
 import { Label } from '@/components/ui/label';
+import { GoalChangeDialog } from '@/components/goals/GoalChangeDialog';
 
 const raceTypeLabels: Record<string, string> = {
   'marathon': 'Marathon',
@@ -55,7 +46,7 @@ const raceDistances: Record<string, { swim?: string; bike?: string; run: string 
 
 export function GoalsPage() {
   const { data, updateGoal } = useOnboarding();
-  const { plan, regenerateCurrentWeek } = useTraining();
+  const { plan, regenerateCurrentWeek, rebuildPlanForGoal, syncUserGoal } = useTraining();
   const goal = data.goal;
 
   const [isEditing, setIsEditing] = useState(false);
@@ -91,14 +82,18 @@ export function GoalsPage() {
         editRaceDate !== (goal?.raceDate ? new Date(goal.raceDate).toISOString().split('T')[0] : '') ||
         editPriority !== (goal?.priority || 'finish');
 
-      // Update context
-      updateGoal({
+      // Update OnboardingContext
+      const newGoal = {
         raceName: editRaceName,
         raceType: editRaceType as any,
         raceDate: new Date(editRaceDate),
         goalTime: editGoalTime || undefined,
         priority: editPriority as any,
-      });
+      };
+      updateGoal(newGoal);
+      // Wave 6.5 / D7: keep TrainingContext.userData.goal in lock-step so
+      // the next AI prompt reads the new race without a refresh.
+      syncUserGoal(newGoal);
 
       // Update Supabase training plan
       if (plan?.id) {
@@ -397,33 +392,30 @@ export function GoalsPage() {
         </div>
       </div>
 
-      <AlertDialog open={showRegenDialog} onOpenChange={setShowRegenDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Update Training Plan?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Your race goal has changed. Would you like to regenerate your current
-              training week to better align with your updated goal?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => {
-              setSaveSuccess(true);
-              setTimeout(() => setSaveSuccess(false), 3000);
-            }}>
-              Keep Current Plan
-            </AlertDialogCancel>
-            <AlertDialogAction onClick={() => {
-              regenerateCurrentWeek('Race goal updated - adjust training plan accordingly');
-              setShowRegenDialog(false);
-              setSaveSuccess(true);
-              setTimeout(() => setSaveSuccess(false), 3000);
-            }}>
-              Regenerate Plan
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <GoalChangeDialog
+        open={showRegenDialog}
+        onOpenChange={(open) => {
+          setShowRegenDialog(open);
+          if (!open) {
+            // User dismissed via Escape / outside-click / Cancel — flash the
+            // success indicator since the goal save itself succeeded.
+            setSaveSuccess(true);
+            setTimeout(() => setSaveSuccess(false), 3000);
+          }
+        }}
+        onRebuildFullPlan={() => {
+          rebuildPlanForGoal();
+          setShowRegenDialog(false);
+          setSaveSuccess(true);
+          setTimeout(() => setSaveSuccess(false), 3000);
+        }}
+        onAdjustThisWeek={() => {
+          regenerateCurrentWeek('Race goal updated - adjust training plan accordingly');
+          setShowRegenDialog(false);
+          setSaveSuccess(true);
+          setTimeout(() => setSaveSuccess(false), 3000);
+        }}
+      />
     </DashboardLayout>
   );
 }

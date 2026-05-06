@@ -12,6 +12,7 @@ import {
   CompletedWeek,
   WeekFeedback,
   OnboardingData,
+  RaceGoal,
   WorkoutStatus,
 } from '@/types/training';
 import { generateWeekPlan, createWeekSummary } from '@/lib/claudeApi';
@@ -54,6 +55,20 @@ interface TrainingContextType {
    * threshold pace, etc. (D2 — race-complete "Start a new plan" CTA.)
    */
   resetPlanForNewRace: () => void;
+  /**
+   * Wave 6.5 / D7: rebuild the plan structure (totalWeeks, current-week
+   * content) using the current `userData.goal`. Preserves completedWeeks.
+   * Use this when the race goal materially changes (race type, race date),
+   * so the user isn't stuck with a totalWeeks frozen at the original race.
+   */
+  rebuildPlanForGoal: () => Promise<void>;
+  /**
+   * Wave 6.5 / D7: keep `userData.goal` in lock-step with whatever the
+   * Goals page just wrote to OnboardingContext, so the next AI prompt
+   * reflects the new race without requiring a page refresh. Phase 2
+   * (Supabase-first storage) makes this method vestigial.
+   */
+  syncUserGoal: (goal: Partial<RaceGoal>) => void;
 }
 
 const TrainingContext = createContext<TrainingContextType | undefined>(undefined);
@@ -76,6 +91,20 @@ function calculateTotalWeeks(raceDate: Date): number {
   const diffTime = new Date(raceDate).getTime() - now.getTime();
   const diffWeeks = Math.ceil(diffTime / (1000 * 60 * 60 * 24 * 7));
   return Math.max(1, Math.min(52, diffWeeks)); // Cap at 52 weeks
+}
+
+/**
+ * Sport-realistic clamp for goal rebuilds (Wave 6.5). 8 is the minimum to
+ * meaningfully prep for a half-Ironman from a maintained base; 24 is the
+ * upper end of a single periodised cycle (longer than that and the early
+ * weeks lose specificity).
+ */
+function clampedWeeksUntilRace(raceDate: Date, today: Date = new Date()): number {
+  // Ceil semantics match `calculateTotalWeeks` (used by initial onboarding):
+  // a race 20.5 weeks out gets a 21-week plan, not a 20-week plan.
+  const diffMs = new Date(raceDate).getTime() - today.getTime();
+  const weeks = Math.ceil(diffMs / (1000 * 60 * 60 * 24 * 7));
+  return Math.max(8, Math.min(24, weeks));
 }
 
 function savePlanToStorage(plan: TrainingPlan): void {
@@ -953,6 +982,91 @@ export function TrainingProvider({ children }: { children: ReactNode }) {
     })();
   };
 
+  /**
+   * Wave 6.5 / D7: keep the in-memory goal (used by the AI prompt) in
+   * lock-step with whatever the Goals page just saved to OnboardingContext.
+   * Without this, editing the goal only updates `onboarding_data` and the
+   * AI keeps producing weeks for the OLD race until next page refresh.
+   */
+  const syncUserGoal = (goal: Partial<RaceGoal>): void => {
+    if (!userData) return;
+    const updated: OnboardingData = {
+      ...userData,
+      goal: { ...userData.goal, ...goal } as RaceGoal,
+    };
+    setUserData(updated);
+    saveUserDataToStorage(updated);
+  };
+
+  /**
+   * Wave 6.5 / D7: rebuild plan structure (totalWeeks + current-week
+   * content) using the current `userData.goal`. Preserves completedWeeks,
+   * so a user who already trained 3 weeks toward an Olympic doesn't lose
+   * that history when switching to Ironman 70.3 later in the season.
+   */
+  const rebuildPlanForGoal = async (): Promise<void> => {
+    if (!plan || !userData) {
+      setError('No active plan or user data found');
+      return;
+    }
+    if (isLoading) return;
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const newTotalWeeks = clampedWeeksUntilRace(new Date(userData.goal.raceDate));
+      const completedCount = plan.completedWeeks.length;
+      const nextWeekNumber = Math.min(completedCount + 1, newTotalWeeks);
+
+      // 1. Anthropic call FIRST (Wave 1 invariant): if generation fails, no
+      //    state mutation happens.
+      const newWeek = await generateWeekPlan(
+        userData,
+        nextWeekNumber,
+        newTotalWeeks,
+        plan.completedWeeks,
+        'Race goal updated — rebuild full plan with new race context',
+      );
+
+      // 2. Atomic in-memory update of race fields + plan structure.
+      const updatedPlan: TrainingPlan = {
+        ...plan,
+        raceName: userData.goal.raceName,
+        raceType: userData.goal.raceType,
+        raceDate: userData.goal.raceDate,
+        totalWeeks: newTotalWeeks,
+        currentWeekNumber: nextWeekNumber,
+        currentWeek: newWeek,
+      };
+      setPlan(updatedPlan);
+
+      // 3. Best-effort Supabase persist of the top-level plan fields. The
+      //    autosave effect handles the new week's `weeks` row write.
+      if (plan.id) {
+        const raceDateStr = userData.goal.raceDate instanceof Date
+          ? userData.goal.raceDate.toISOString().split('T')[0]
+          : userData.goal.raceDate;
+        await supabase
+          .from('training_plans')
+          .update({
+            race_name: userData.goal.raceName,
+            race_type: userData.goal.raceType,
+            race_date: raceDateStr,
+            total_weeks: newTotalWeeks,
+            current_week_number: nextWeekNumber,
+          })
+          .eq('id', plan.id);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to rebuild plan';
+      console.error('Error rebuilding plan:', message);
+      setError(message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <TrainingContext.Provider
       value={{
@@ -973,6 +1087,8 @@ export function TrainingProvider({ children }: { children: ReactNode }) {
         clearError,
         resetPlan,
         resetPlanForNewRace,
+        rebuildPlanForGoal,
+        syncUserGoal,
       }}
     >
       {children}
