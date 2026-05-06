@@ -760,6 +760,7 @@ export function TrainingProvider({ children }: { children: ReactNode }) {
       const message = err instanceof Error ? err.message : 'Failed to regenerate week';
       console.error('Error regenerating current week:', message);
       setError(message);
+      throw err instanceof Error ? err : new Error(message);
     } finally {
       setIsLoading(false);
     }
@@ -1062,6 +1063,7 @@ export function TrainingProvider({ children }: { children: ReactNode }) {
       const message = err instanceof Error ? err.message : 'Failed to rebuild plan';
       console.error('Error rebuilding plan:', message);
       setError(message);
+      throw err instanceof Error ? err : new Error(message);
     } finally {
       setIsLoading(false);
     }

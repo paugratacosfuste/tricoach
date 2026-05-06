@@ -397,23 +397,17 @@ export function GoalsPage() {
         onOpenChange={(open) => {
           setShowRegenDialog(open);
           if (!open) {
-            // User dismissed via Escape / outside-click / Cancel — flash the
-            // success indicator since the goal save itself succeeded.
+            // Whether the dialog closed via Cancel or via successful action,
+            // flash the green success indicator on the page.
             setSaveSuccess(true);
             setTimeout(() => setSaveSuccess(false), 3000);
           }
         }}
-        onRebuildFullPlan={() => {
-          rebuildPlanForGoal();
-          setShowRegenDialog(false);
-          setSaveSuccess(true);
-          setTimeout(() => setSaveSuccess(false), 3000);
+        onRebuildFullPlan={async () => {
+          await rebuildPlanForGoal();
         }}
-        onAdjustThisWeek={() => {
-          regenerateCurrentWeek('Race goal updated - adjust training plan accordingly');
-          setShowRegenDialog(false);
-          setSaveSuccess(true);
-          setTimeout(() => setSaveSuccess(false), 3000);
+        onAdjustThisWeek={async () => {
+          await regenerateCurrentWeek('Race goal updated - adjust training plan accordingly');
         }}
       />
     </DashboardLayout>

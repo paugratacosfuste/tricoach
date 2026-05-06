@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent, within } from "@testing-library/react";
+import { render, screen, fireEvent, within, waitFor } from "@testing-library/react";
 import { GoalChangeDialog } from "../GoalChangeDialog";
 
 describe("GoalChangeDialog", () => {
-  it("renders both choice buttons + cancel when open (Wave 6.5)", () => {
+  it("renders all three actions + the goal-saved confirmation when open", () => {
     render(
       <GoalChangeDialog
         open
@@ -13,53 +13,60 @@ describe("GoalChangeDialog", () => {
       />,
     );
     const dialog = screen.getByRole("alertdialog");
-    expect(within(dialog).getByRole("button", { name: /rebuild full plan/i })).toBeInTheDocument();
-    expect(within(dialog).getByRole("button", { name: /just adjust this week/i })).toBeInTheDocument();
-    expect(within(dialog).getByRole("button", { name: /keep current plan/i })).toBeInTheDocument();
+    expect(within(dialog).getByText(/goal saved/i)).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: /^rebuild full plan$/i })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: /^just adjust this week$/i })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: /^keep current plan$/i })).toBeInTheDocument();
   });
 
-  it("calls onRebuildFullPlan when the primary action is clicked", () => {
-    const onRebuildFullPlan = vi.fn();
+  it("calls onRebuildFullPlan and closes on success", async () => {
+    const onOpenChange = vi.fn();
+    const onRebuildFullPlan = vi.fn().mockResolvedValue(undefined);
     render(
       <GoalChangeDialog
         open
-        onOpenChange={vi.fn()}
+        onOpenChange={onOpenChange}
         onRebuildFullPlan={onRebuildFullPlan}
         onAdjustThisWeek={vi.fn()}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: /rebuild full plan/i }));
-    expect(onRebuildFullPlan).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: /^rebuild full plan$/i }));
+    await waitFor(() => expect(onRebuildFullPlan).toHaveBeenCalledOnce());
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
   });
 
-  it("calls onAdjustThisWeek when the secondary action is clicked", () => {
-    const onAdjustThisWeek = vi.fn();
+  it("calls onAdjustThisWeek and closes on success", async () => {
+    const onOpenChange = vi.fn();
+    const onAdjustThisWeek = vi.fn().mockResolvedValue(undefined);
     render(
       <GoalChangeDialog
         open
-        onOpenChange={vi.fn()}
+        onOpenChange={onOpenChange}
         onRebuildFullPlan={vi.fn()}
         onAdjustThisWeek={onAdjustThisWeek}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: /just adjust this week/i }));
-    expect(onAdjustThisWeek).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: /^just adjust this week$/i }));
+    await waitFor(() => expect(onAdjustThisWeek).toHaveBeenCalledOnce());
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
   });
 
-  it("does NOT call either action handler when Cancel is clicked", () => {
+  it("does NOT call action handlers when Cancel is clicked", () => {
     const onRebuildFullPlan = vi.fn();
     const onAdjustThisWeek = vi.fn();
+    const onOpenChange = vi.fn();
     render(
       <GoalChangeDialog
         open
-        onOpenChange={vi.fn()}
+        onOpenChange={onOpenChange}
         onRebuildFullPlan={onRebuildFullPlan}
         onAdjustThisWeek={onAdjustThisWeek}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: /keep current plan/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^keep current plan$/i }));
     expect(onRebuildFullPlan).not.toHaveBeenCalled();
     expect(onAdjustThisWeek).not.toHaveBeenCalled();
+    expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
   it("renders nothing when open=false", () => {
@@ -72,5 +79,67 @@ describe("GoalChangeDialog", () => {
       />,
     );
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+
+  it("shows a loading spinner on the rebuild button while in flight (Wave 6.5 fix)", async () => {
+    let resolveFn!: () => void;
+    const onRebuildFullPlan = vi.fn(
+      () => new Promise<void>((resolve) => { resolveFn = resolve; }),
+    );
+    render(
+      <GoalChangeDialog
+        open
+        onOpenChange={vi.fn()}
+        onRebuildFullPlan={onRebuildFullPlan}
+        onAdjustThisWeek={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^rebuild full plan$/i }));
+    // While the promise is unresolved, button shows "Rebuilding..." + aria-busy.
+    await waitFor(() => {
+      const btn = screen.getByRole("button", { name: /rebuilding/i });
+      expect(btn).toHaveAttribute("aria-busy", "true");
+    });
+    resolveFn();
+  });
+
+  it("disables other actions while one is in flight (Wave 6.5 fix)", async () => {
+    let resolveFn!: () => void;
+    const onRebuildFullPlan = vi.fn(
+      () => new Promise<void>((resolve) => { resolveFn = resolve; }),
+    );
+    render(
+      <GoalChangeDialog
+        open
+        onOpenChange={vi.fn()}
+        onRebuildFullPlan={onRebuildFullPlan}
+        onAdjustThisWeek={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^rebuild full plan$/i }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /^just adjust this week$/i })).toBeDisabled();
+      expect(screen.getByRole("button", { name: /^keep current plan$/i })).toBeDisabled();
+    });
+    resolveFn();
+  });
+
+  it("displays an error message and stays open when the action throws (Wave 6.5 fix)", async () => {
+    const onOpenChange = vi.fn();
+    const onRebuildFullPlan = vi.fn().mockRejectedValue(new Error("Anthropic exploded"));
+    render(
+      <GoalChangeDialog
+        open
+        onOpenChange={onOpenChange}
+        onRebuildFullPlan={onRebuildFullPlan}
+        onAdjustThisWeek={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^rebuild full plan$/i }));
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent(/anthropic exploded/i);
+    });
+    // Dialog must NOT have been asked to close on failure — user keeps context.
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
   });
 });
