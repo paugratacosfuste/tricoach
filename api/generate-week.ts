@@ -8,19 +8,7 @@ import {
   RateLimitError,
   defaultUsageStore,
 } from './_lib/rateLimit.js';
-
-// Anthropic Sonnet 4 pricing (per 1M tokens). Used to compute cost_usd
-// rows for api_usage so future budget tooling can read it directly.
-const ANTHROPIC_INPUT_USD_PER_M = 3;
-const ANTHROPIC_OUTPUT_USD_PER_M = 15;
-
-function computeCostUsd(inputTokens: number, outputTokens: number): number {
-    const cost =
-        (inputTokens / 1_000_000) * ANTHROPIC_INPUT_USD_PER_M +
-        (outputTokens / 1_000_000) * ANTHROPIC_OUTPUT_USD_PER_M;
-    // Round to 6 decimal places to match the api_usage column precision.
-    return Math.round(cost * 1_000_000) / 1_000_000;
-}
+import { computeCostUsd } from './_lib/pricing.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Only allow POST

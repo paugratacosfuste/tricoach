@@ -18,7 +18,7 @@ export class RateLimitError extends Error {
   }
 }
 
-export type LimitType = "hourly" | "daily" | "monthly_tokens";
+export type LimitType = "hourly" | "daily" | "monthly_tokens" | "cost_budget";
 
 /**
  * Storage adapter interface — abstracts the api_usage queries so tests
@@ -28,6 +28,8 @@ export type LimitType = "hourly" | "daily" | "monthly_tokens";
 export interface UsageStore {
   countSuccessfulCalls(userId: string, since: Date): Promise<number>;
   sumTokens(userId: string, since: Date): Promise<number>;
+  /** Item-12: rolling 30d cost in USD for the user. */
+  sumCost(userId: string, since: Date): Promise<number>;
   recordCall(input: RecordCallInput): Promise<void>;
 }
 
@@ -47,12 +49,21 @@ const THIRTY_DAYS_SECONDS = 30 * DAY_SECONDS;
 const DEFAULT_HOURLY_LIMIT = 10;
 const DEFAULT_DAILY_LIMIT = 30;
 const DEFAULT_MONTHLY_TOKEN_BUDGET = 500_000;
+const DEFAULT_MONTHLY_COST_BUDGET_USD = 50;
 const RECORD_CALL_RETRY_DELAY_MS = 200;
 
 function readEnvInt(name: string, fallback: number): number {
   const raw = process.env[name];
   if (!raw) return fallback;
   const parsed = parseInt(raw, 10);
+  if (Number.isNaN(parsed) || parsed < 0) return fallback;
+  return parsed;
+}
+
+function readEnvFloat(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const parsed = parseFloat(raw);
   if (Number.isNaN(parsed) || parsed < 0) return fallback;
   return parsed;
 }
@@ -114,6 +125,18 @@ export async function enforceLimits(
   if (tokenSum >= monthlyBudget) {
     throw new RateLimitError("monthly_tokens", THIRTY_DAYS_SECONDS);
   }
+
+  // Item-12: parallel cost budget. Output tokens cost 5× input, so a user
+  // crafting long-output prompts can blow the dollar budget while staying
+  // under the token budget. Both budgets enforced; either trips a 429.
+  const costBudgetUsd = readEnvFloat(
+    "COST_BUDGET_MONTHLY_USD",
+    DEFAULT_MONTHLY_COST_BUDGET_USD,
+  );
+  const costSum = await store.sumCost(userId, thirtyDaysAgo);
+  if (costSum >= costBudgetUsd) {
+    throw new RateLimitError("cost_budget", THIRTY_DAYS_SECONDS);
+  }
 }
 
 /**
@@ -157,6 +180,28 @@ export function defaultUsageStore(): UsageStore {
           acc + (row.input_tokens ?? 0) + (row.output_tokens ?? 0),
         0,
       );
+    },
+
+    async sumCost(userId, since) {
+      // Item-12: same fetch-and-reduce pattern as sumTokens. cost_usd is
+      // numeric(10,6) in Postgres and arrives as a string via the JS
+      // client, hence the parseFloat on each row.
+      const client = getAdminClient();
+      const { data, error } = await client
+        .from("api_usage")
+        .select("cost_usd")
+        .eq("user_id", userId)
+        .eq("status", 200)
+        .gte("created_at", since.toISOString());
+      if (error) {
+        throw new Error(`api_usage cost sum failed: ${error.message}`);
+      }
+      return (data ?? []).reduce((acc, row) => {
+        const v = typeof row.cost_usd === "number"
+          ? row.cost_usd
+          : parseFloat(String(row.cost_usd ?? 0));
+        return acc + (Number.isFinite(v) ? v : 0);
+      }, 0);
     },
 
     async recordCall(input) {

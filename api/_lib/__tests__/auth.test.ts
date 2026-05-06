@@ -119,16 +119,14 @@ describe("verifySupabaseJwt", () => {
     expect(mockGetUser).toHaveBeenCalledWith("valid.jwt.token");
   });
 
-  it("falls back to VITE_SUPABASE_URL when SUPABASE_URL is not set", async () => {
+  it("does NOT fall back to VITE_SUPABASE_URL — Item-7 dropped the server-side fallback", async () => {
     delete process.env.SUPABASE_URL;
     process.env.VITE_SUPABASE_URL = "https://fallback.supabase.co";
-    mockGetUser.mockResolvedValueOnce({
-      data: { user: { id: "u", email: "" } },
-      error: null,
-    });
+    // Should reject because SUPABASE_URL is required and unset; the VITE_*
+    // value is intentionally ignored server-side.
     await expect(
       verifySupabaseJwt(makeReq({ authorization: "Bearer t" })),
-    ).resolves.toEqual({ userId: "u", email: "" });
+    ).rejects.not.toBeInstanceOf(UnauthorizedError);
   });
 
   it("throws (not Unauthorized) when Supabase env is misconfigured", async () => {

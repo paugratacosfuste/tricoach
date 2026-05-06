@@ -15,24 +15,17 @@ let cachedClient: SupabaseClient | null = null;
 export function getAdminClient(): SupabaseClient {
   if (cachedClient) return cachedClient;
 
-  const url = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL;
+  // Item-7: SUPABASE_URL only — no VITE_SUPABASE_URL server-side fallback.
+  // The VITE_* namespace is for the browser bundle; reading it server-side
+  // risked silently using a wrong-tenant URL if the two ever diverged.
+  // SUPABASE_URL must be set in Vercel Production + Preview env vars.
+  const url = process.env.SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!url || !serviceRoleKey) {
     throw new Error(
       "Supabase service-role client is not configured. " +
-        "Set SUPABASE_URL (or VITE_SUPABASE_URL) and SUPABASE_SERVICE_ROLE_KEY " +
-        "in the server environment.",
-    );
-  }
-
-  if (!process.env.SUPABASE_URL && process.env.VITE_SUPABASE_URL) {
-    // Tracked in LAUNCH_PLAN.md Discovered debt: a future PR should add
-    // SUPABASE_URL to Vercel env and remove this fallback so the server
-    // never silently uses a client-side env var.
-    console.warn(
-      "[supabaseAdmin] Using VITE_SUPABASE_URL as server-side fallback. " +
-        "Add SUPABASE_URL to Vercel env vars to remove this warning.",
+        "Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in the server environment.",
     );
   }
 

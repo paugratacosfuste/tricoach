@@ -16,6 +16,7 @@ const { getAdminClient } = await import("../supabaseAdmin.js");
 interface FakeStore extends UsageStore {
   countSuccessfulCalls: ReturnType<typeof vi.fn>;
   sumTokens: ReturnType<typeof vi.fn>;
+  sumCost: ReturnType<typeof vi.fn>;
   recordCall: ReturnType<typeof vi.fn>;
 }
 
@@ -24,6 +25,7 @@ function makeFakeStore(
     hourlyCount?: number;
     dailyCount?: number;
     monthlyTokens?: number;
+    monthlyCostUsd?: number;
   } = {},
 ): FakeStore {
   // countSuccessfulCalls is called twice per enforceLimits run: first for
@@ -33,6 +35,7 @@ function makeFakeStore(
   return {
     countSuccessfulCalls: countMock,
     sumTokens: vi.fn(async () => overrides.monthlyTokens ?? 0),
+    sumCost: vi.fn(async () => overrides.monthlyCostUsd ?? 0),
     recordCall: vi.fn(async () => undefined),
   } as FakeStore;
 }
@@ -42,6 +45,7 @@ describe("enforceLimits", () => {
     delete process.env.RATE_LIMIT_HOURLY;
     delete process.env.RATE_LIMIT_DAILY;
     delete process.env.TOKEN_BUDGET_MONTHLY;
+    delete process.env.COST_BUDGET_MONTHLY_USD;
   });
 
   afterEach(() => {
@@ -120,6 +124,57 @@ describe("enforceLimits", () => {
     });
     // Daily / monthly checks should not have run.
     expect(store.sumTokens).not.toHaveBeenCalled();
+  });
+
+  // ── Item-12: cost-budget enforcement ────────────────────────────────
+  it("throws RateLimitError(cost_budget) when 30d cost is at the default budget ($50)", async () => {
+    const store = makeFakeStore({ monthlyCostUsd: 50 });
+    const promise = enforceLimits("u1", store);
+    await expect(promise).rejects.toBeInstanceOf(RateLimitError);
+    await expect(promise).rejects.toMatchObject({
+      limitType: "cost_budget",
+      retryAfterSeconds: 60 * 60 * 24 * 30,
+    });
+  });
+
+  it("resolves silently when 30d cost is just below the default budget", async () => {
+    const store = makeFakeStore({ monthlyCostUsd: 49.999999 });
+    await expect(enforceLimits("u1", store)).resolves.toBeUndefined();
+  });
+
+  it("respects COST_BUDGET_MONTHLY_USD env override (lower = stricter)", async () => {
+    process.env.COST_BUDGET_MONTHLY_USD = "5";
+    const store = makeFakeStore({ monthlyCostUsd: 5 });
+    await expect(enforceLimits("u1", store)).rejects.toMatchObject({
+      limitType: "cost_budget",
+    });
+  });
+
+  it("respects COST_BUDGET_MONTHLY_USD env override (looser)", async () => {
+    process.env.COST_BUDGET_MONTHLY_USD = "1000";
+    const store = makeFakeStore({ monthlyCostUsd: 60 });
+    await expect(enforceLimits("u1", store)).resolves.toBeUndefined();
+  });
+
+  it("falls back to default budget when COST_BUDGET_MONTHLY_USD is non-numeric", async () => {
+    process.env.COST_BUDGET_MONTHLY_USD = "expensive";
+    const store = makeFakeStore({ monthlyCostUsd: 50 });
+    await expect(enforceLimits("u1", store)).rejects.toMatchObject({
+      limitType: "cost_budget",
+    });
+  });
+
+  it("checks limits in order: hourly → daily → monthly_tokens → cost_budget", async () => {
+    const store = makeFakeStore({
+      hourlyCount: 0,
+      dailyCount: 0,
+      monthlyTokens: 0,
+      monthlyCostUsd: 50,
+    });
+    const promise = enforceLimits("u1", store);
+    await expect(promise).rejects.toMatchObject({ limitType: "cost_budget" });
+    // sumCost is the last check, so it ran.
+    expect(store.sumCost).toHaveBeenCalledOnce();
   });
 
   it("calls store.countSuccessfulCalls with a 1-hour-ago Date for the hourly check", async () => {
