@@ -1,14 +1,13 @@
 import { useState } from "react";
-import { CheckCircle2, Loader2, AlertCircle } from "lucide-react";
+import { CheckCircle2, Loader2, AlertCircle, Sparkles, RefreshCw } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogContent,
   AlertDialogDescription,
-  AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 export interface GoalChangeDialogProps {
   readonly open: boolean;
@@ -28,20 +27,21 @@ type BusyState = null | "rebuild" | "adjust";
 
 /**
  * Wave 6.5 / D7: shown after the user saves a training-affecting goal
- * change (race type / date / priority). Replaces the old single-button
- * dialog that only called `regenerateCurrentWeek` and left `totalWeeks`
- * stale.
+ * change (race type / date / priority).
  *
- * Three actions:
- *   - Rebuild full plan      → recompute structure + regenerate current week
- *   - Just adjust this week  → preserve structure, regenerate current week
- *   - Keep current plan      → cancel, no-op
+ * UX patch (Wave 6.5.7 + 6.5.8): card-based option layout (each choice is
+ * a full-width clickable card with icon + title + subtitle), small "Keep
+ * current plan" link in the header, inline loading on the active card,
+ * inline error if generation fails. The previous dense-paragraph + 3-button
+ * layout was hard to scan and made the dialog feel cramped.
  *
- * The dialog awaits the chosen async action so the user sees a spinner
- * while Anthropic is generating (~10-15s) instead of seeing the dialog
- * close immediately and wondering whether anything actually happened.
- * On error, the dialog stays open with an inline error message so the
- * user can retry without losing context.
+ * Two real choices:
+ *   - Rebuild full plan      → recalculate plan length + regenerate this week
+ *   - Just adjust this week  → keep plan length, regenerate this week
+ *
+ * The dialog awaits the chosen async action and stays open with an inline
+ * error if it throws, so a silent failure (rate limit, network blip) is
+ * never invisible to the user.
  */
 export function GoalChangeDialog({
   open,
@@ -57,7 +57,6 @@ export function GoalChangeDialog({
     setError(null);
     try {
       await fn();
-      // Reset internal state then close on success.
       setBusy(null);
       onOpenChange(false);
     } catch (err) {
@@ -67,7 +66,7 @@ export function GoalChangeDialog({
   };
 
   const handleCancel = () => {
-    if (busy !== null) return; // ignore while a generation is in flight
+    if (busy !== null) return;
     setError(null);
     onOpenChange(false);
   };
@@ -76,74 +75,131 @@ export function GoalChangeDialog({
     <AlertDialog
       open={open}
       onOpenChange={(next) => {
-        // Block close-on-Escape / overlay-click while busy so the user
-        // can't lose visibility into an in-flight Anthropic call.
         if (!next && busy !== null) return;
         if (!next) setError(null);
         onOpenChange(next);
       }}
     >
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <div className="flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400 mb-1">
-            <CheckCircle2 className="w-4 h-4" />
-            Goal saved
+      <AlertDialogContent className="max-w-lg">
+        <AlertDialogHeader className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              Goal saved
+            </span>
+            <button
+              type="button"
+              onClick={handleCancel}
+              disabled={busy !== null}
+              className="text-xs text-muted-foreground hover:text-foreground hover:underline disabled:opacity-50 disabled:hover:no-underline"
+            >
+              Keep current plan
+            </button>
           </div>
-          <AlertDialogTitle>Update training plan?</AlertDialogTitle>
+          <AlertDialogTitle className="text-xl">
+            How should we update your training plan?
+          </AlertDialogTitle>
           <AlertDialogDescription>
-            Your race details changed. <strong>Rebuild full plan</strong> recalculates how many
-            weeks of training you have until race day and starts a fresh current week with the new
-            race context — recommended when you've changed race type or moved the race by more than
-            a couple of weeks. <strong>Just adjust this week</strong> keeps the existing plan
-            length but regenerates this week's content with the new context.
+            Your race details just changed. Pick how to adapt the plan.
           </AlertDialogDescription>
         </AlertDialogHeader>
+
+        <div className="space-y-2 mt-2">
+          <OptionCard
+            icon={<Sparkles className="w-5 h-5 text-primary" />}
+            title="Rebuild full plan"
+            recommendedBadge
+            description="Recalculate how many weeks of training you have until race day, then regenerate this week with the new race context. Best when you've changed race type or moved race day by more than a couple of weeks."
+            busy={busy === "rebuild"}
+            busyLabel="Generating your new plan… (10–15 seconds)"
+            onClick={handleAction("rebuild", onRebuildFullPlan)}
+            disabled={busy !== null}
+            ariaLabel="Rebuild full plan"
+          />
+          <OptionCard
+            icon={<RefreshCw className="w-5 h-5 text-muted-foreground" />}
+            title="Just adjust this week"
+            description="Keep the existing plan length and just regenerate this week's content with the new race context."
+            busy={busy === "adjust"}
+            busyLabel="Regenerating this week…"
+            onClick={handleAction("adjust", onAdjustThisWeek)}
+            disabled={busy !== null}
+            ariaLabel="Just adjust this week"
+          />
+        </div>
 
         {error && (
           <div
             role="alert"
-            className="flex items-start gap-2 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive"
+            className="flex items-start gap-2 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive mt-2"
           >
             <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
             <span>{error}</span>
           </div>
         )}
-
-        <AlertDialogFooter className="flex-col sm:flex-row sm:justify-end gap-2">
-          <Button variant="ghost" onClick={handleCancel} disabled={busy !== null}>
-            Keep current plan
-          </Button>
-          <Button
-            variant="outline"
-            onClick={handleAction("adjust", onAdjustThisWeek)}
-            disabled={busy !== null}
-            aria-busy={busy === "adjust"}
-          >
-            {busy === "adjust" ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Adjusting…
-              </>
-            ) : (
-              "Just adjust this week"
-            )}
-          </Button>
-          <Button
-            onClick={handleAction("rebuild", onRebuildFullPlan)}
-            disabled={busy !== null}
-            aria-busy={busy === "rebuild"}
-          >
-            {busy === "rebuild" ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Rebuilding…
-              </>
-            ) : (
-              "Rebuild full plan"
-            )}
-          </Button>
-        </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+  );
+}
+
+interface OptionCardProps {
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+  recommendedBadge?: boolean;
+  busy: boolean;
+  busyLabel: string;
+  onClick: () => void;
+  disabled: boolean;
+  ariaLabel: string;
+}
+
+function OptionCard({
+  icon,
+  title,
+  description,
+  recommendedBadge,
+  busy,
+  busyLabel,
+  onClick,
+  disabled,
+  ariaLabel,
+}: OptionCardProps) {
+  return (
+    <button
+      type="button"
+      role="button"
+      aria-label={ariaLabel}
+      aria-busy={busy}
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        "w-full text-left rounded-lg border bg-card transition-colors",
+        "px-4 py-3 hover:border-primary hover:bg-primary/5",
+        "disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-border disabled:hover:bg-card",
+        busy && "border-primary bg-primary/5",
+      )}
+    >
+      <div className="flex items-start gap-3">
+        <div className="mt-0.5 shrink-0">{icon}</div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-medium text-base">{title}</span>
+            {recommendedBadge && (
+              <span className="text-[10px] uppercase tracking-wide font-semibold bg-primary/15 text-primary px-1.5 py-0.5 rounded">
+                Recommended
+              </span>
+            )}
+          </div>
+          <p className="text-sm text-muted-foreground mt-0.5 leading-snug">{description}</p>
+          {busy && (
+            <div className="mt-2 flex items-center gap-2 text-sm text-primary font-medium">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              <span>{busyLabel}</span>
+            </div>
+          )}
+        </div>
+      </div>
+    </button>
   );
 }

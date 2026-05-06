@@ -3,7 +3,7 @@ import { render, screen, fireEvent, within, waitFor } from "@testing-library/rea
 import { GoalChangeDialog } from "../GoalChangeDialog";
 
 describe("GoalChangeDialog", () => {
-  it("renders all three actions + the goal-saved confirmation when open", () => {
+  it("renders both option cards, the keep-current-plan dismiss, and the goal-saved confirmation", () => {
     render(
       <GoalChangeDialog
         open
@@ -17,6 +17,8 @@ describe("GoalChangeDialog", () => {
     expect(within(dialog).getByRole("button", { name: /^rebuild full plan$/i })).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: /^just adjust this week$/i })).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: /^keep current plan$/i })).toBeInTheDocument();
+    // The Recommended badge marks the primary path.
+    expect(within(dialog).getByText(/recommended/i)).toBeInTheDocument();
   });
 
   it("calls onRebuildFullPlan and closes on success", async () => {
@@ -81,7 +83,7 @@ describe("GoalChangeDialog", () => {
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
 
-  it("shows a loading spinner on the rebuild button while in flight (Wave 6.5 fix)", async () => {
+  it("marks the rebuild card aria-busy and shows inline status while in flight (Wave 6.5 fix)", async () => {
     let resolveFn!: () => void;
     const onRebuildFullPlan = vi.fn(
       () => new Promise<void>((resolve) => { resolveFn = resolve; }),
@@ -95,10 +97,11 @@ describe("GoalChangeDialog", () => {
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: /^rebuild full plan$/i }));
-    // While the promise is unresolved, button shows "Rebuilding..." + aria-busy.
     await waitFor(() => {
-      const btn = screen.getByRole("button", { name: /rebuilding/i });
+      const btn = screen.getByRole("button", { name: /^rebuild full plan$/i });
       expect(btn).toHaveAttribute("aria-busy", "true");
+      // Busy label is rendered inside the card so the user sees what's happening.
+      expect(within(btn).getByText(/generating your new plan/i)).toBeInTheDocument();
     });
     resolveFn();
   });
