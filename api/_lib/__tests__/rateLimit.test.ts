@@ -294,4 +294,24 @@ describe("defaultUsageStore.recordCall — retry on transient INSERT failure (It
       expect.objectContaining({ prompt_version: null }),
     );
   });
+
+  // ── Phase 1.D — cache_read_tokens column persistence ───────────────────
+  it("writes the supplied cacheReadTokens to the cache_read_tokens column", async () => {
+    const { insertSpy } = mockInsertResults([{ error: null }]);
+    await defaultUsageStore().recordCall({
+      ...sampleInput,
+      cacheReadTokens: 5000,
+    });
+    expect(insertSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ cache_read_tokens: 5000 }),
+    );
+  });
+
+  it("defaults cache_read_tokens to 0 when omitted (non-cached call)", async () => {
+    const { insertSpy } = mockInsertResults([{ error: null }]);
+    await defaultUsageStore().recordCall(sampleInput);
+    expect(insertSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ cache_read_tokens: 0 }),
+    );
+  });
 });

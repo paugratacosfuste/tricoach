@@ -50,6 +50,19 @@ export interface RecordCallInput {
    * normalises a missing value to the literal `'unknown'`.
    */
   readonly promptVersion?: string;
+  /**
+   * Phase 1.D — `usage.cache_creation_input_tokens` from Anthropic.
+   * Used by `computeCostUsd` (1.25× input rate). Not currently
+   * persisted to `api_usage` (no column for it); track through the
+   * cost field only.
+   */
+  readonly cacheCreationTokens?: number;
+  /**
+   * Phase 1.D — `usage.cache_read_input_tokens` from Anthropic.
+   * Persisted to `api_usage.cache_read_tokens` so we can monitor cache
+   * hit rate (target ≥ 70% after second call per user).
+   */
+  readonly cacheReadTokens?: number;
 }
 
 const HOUR_SECONDS = 60 * 60;
@@ -226,6 +239,10 @@ export function defaultUsageStore(): UsageStore {
         // Phase 1.C.4 — Postgres column is nullable; emit null rather than
         // the literal 'undefined' for legacy callers that don't pass it.
         prompt_version: input.promptVersion ?? null,
+        // Phase 1.D — `cache_read_tokens` defaults to 0 in the Postgres
+        // schema; we make the default explicit so a non-cached call writes
+        // 0 (truthy SQL aggregations don't accidentally exclude the row).
+        cache_read_tokens: input.cacheReadTokens ?? 0,
       };
 
       // Item-9: retry once on transient failure. If only the first attempt

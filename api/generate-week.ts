@@ -92,9 +92,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // 4. Call Anthropic
     //
-    // Phase 1.C.1 + 1.C.5 — pinned call shape. Static system + dynamic
-    // user message in line with Anthropic's caching contract (1.D will add
-    // `cache_control` to the system block).
+    // Phase 1.C.1 + 1.C.5 — pinned call shape.
+    //
+    // Phase 1.D — `system` is now a content-block array with
+    // `cache_control: {type: 'ephemeral'}` so Anthropic caches the static
+    // SYSTEM_PROMPT for the 5-minute ephemeral window. First call per
+    // window pays a 1.25× write penalty on `cache_creation_input_tokens`;
+    // every subsequent call pays only 0.1× on `cache_read_input_tokens`
+    // — net savings on the static block ≈ 90% after the first hit.
+    // NOTE: caching only kicks in when the cached block ≥ 1024 tokens
+    // (Sonnet 4 minimum). If `usage.cache_read_input_tokens === 0`
+    // consistently, SYSTEM_PROMPT is below threshold and needs growing.
     //
     // Model choice (1.C.5): `claude-sonnet-4-6`. Best current Sonnet at
     // ship date, on the Claude 4.x line. Rollback to
@@ -112,19 +120,38 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 'Content-Type': 'application/json',
                 'x-api-key': apiKey,
                 'anthropic-version': '2023-06-01',
+                // Phase 1.D — prompt caching is GA on Sonnet 4.x without
+                // the beta header, but including it is the documented-safe
+                // path back to the 2024-07-31 beta semantics. Harmless if
+                // already enabled; required for some Haiku 4 endpoints.
+                // Defensive against quiet model-family rollouts that
+                // re-gate caching behind the flag.
+                'anthropic-beta': 'prompt-caching-2024-07-31',
             },
             body: JSON.stringify({
                 model: 'claude-sonnet-4-6',
                 max_tokens: 8000,
                 temperature: 0.2,
-                // Server-owned, immutable across requests.
-                system: SYSTEM_PROMPT,
+                // Server-owned, immutable. Wrapped in a content-block so
+                // Anthropic caches the static text (Phase 1.D).
+                system: [
+                    {
+                        type: 'text',
+                        text: SYSTEM_PROMPT,
+                        cache_control: { type: 'ephemeral' },
+                    },
+                ],
                 messages: [{ role: 'user', content: userPrompt }],
             }),
         });
 
         const data = (await response.json()) as {
-            usage?: { input_tokens?: number; output_tokens?: number };
+            usage?: {
+                input_tokens?: number;
+                output_tokens?: number;
+                cache_creation_input_tokens?: number;
+                cache_read_input_tokens?: number;
+            };
             [k: string]: unknown;
         };
 
@@ -136,9 +163,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // 5. Record successful call in api_usage so the rate limiter sees
         // it on subsequent requests. Failures here log but do not block
         // the response — the user already has their plan.
+        //
+        // Phase 1.D — capture cache token counts so `computeCostUsd`
+        // applies the correct multipliers (write 1.25×, read 0.1×) and
+        // `api_usage.cache_read_tokens` reflects hit rate.
         const usage = data.usage ?? {};
         const inputTokens = usage.input_tokens ?? 0;
         const outputTokens = usage.output_tokens ?? 0;
+        const cacheCreationTokens = usage.cache_creation_input_tokens ?? 0;
+        const cacheReadTokens = usage.cache_read_input_tokens ?? 0;
         try {
             await store.recordCall({
                 userId: user.userId,
@@ -146,7 +179,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 status: 200,
                 inputTokens,
                 outputTokens,
-                costUsd: computeCostUsd(inputTokens, outputTokens),
+                cacheCreationTokens,
+                cacheReadTokens,
+                costUsd: computeCostUsd(
+                    inputTokens,
+                    outputTokens,
+                    cacheCreationTokens,
+                    cacheReadTokens,
+                ),
                 // Phase 1.C.4 — bounds the audit-log column width and
                 // strips control chars / null bytes / RTL overrides.
                 promptVersion: sanitizePromptVersion(promptVersion),
