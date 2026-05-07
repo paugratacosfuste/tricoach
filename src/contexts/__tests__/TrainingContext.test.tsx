@@ -7,22 +7,47 @@ import { supabase } from '@/lib/supabase';
 import { generateWeekPlan, createWeekSummary } from '@/lib/claudeApi';
 
 // Mock supabase
-vi.mock('@/lib/supabase', () => ({
-  supabase: {
-    auth: {
-      getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'test-user' } } }),
-    },
-    from: vi.fn(() => ({
-      select: vi.fn().mockReturnThis(),
-      insert: vi.fn().mockReturnThis(),
-      update: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      order: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({ data: null, error: null }),
+//
+// Wave 9 / Item-4: extended chain so the OLDER tests (that rely on the
+// default mock instead of `makeSupabaseMock`) cover every method the prod
+// code calls. Production chains end either with `.single()` / `.maybeSingle()`
+// (returns `{ data: null, error: null }`) or with a non-terminal call that's
+// directly awaited (e.g. `await query.in(...).order(...)`); the latter is
+// supported by making the chain itself a thenable resolving to
+// `{ data: [], error: null }`.
+vi.mock('@/lib/supabase', () => {
+  const makeChain = () => {
+    const chain: Record<string, unknown> = {
+      // `single` returns a row with an id by default so prod code that does
+      // `.upsert(...).select('id').single()` (e.g. `savePlanToSupabase`) gets
+      // a usable `planRow.id` and doesn't null-deref. `maybeSingle` keeps the
+      // null default — `loadPlanFromSupabase` relies on null to fall back to
+      // localStorage in tests that haven't seeded a Supabase plan.
+      single: vi.fn().mockResolvedValue({
+        data: { id: 'mock-default-id' },
+        error: null,
+      }),
       maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
-    })),
-  },
-}));
+      then: (resolve: (v: { data: unknown[]; error: null }) => unknown) =>
+        resolve({ data: [], error: null }),
+    };
+    for (const method of [
+      'select', 'insert', 'update', 'upsert', 'delete',
+      'eq', 'in', 'order', 'limit',
+    ]) {
+      chain[method] = vi.fn(() => chain);
+    }
+    return chain;
+  };
+  return {
+    supabase: {
+      auth: {
+        getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'test-user' } } }),
+      },
+      from: vi.fn(makeChain),
+    },
+  };
+});
 
 // Mock claudeApi
 vi.mock('@/lib/claudeApi', () => ({
@@ -116,7 +141,28 @@ function makeSupabaseMock(overrides: { weekRowId?: string | null } = {}) {
   const updateSpy = vi.fn().mockReturnValue({
     eq: vi.fn().mockResolvedValue({ data: null, error: null }),
   });
-  const upsertSpy = vi.fn().mockResolvedValue({ data: null, error: null });
+  // Wave 9 / Item-4: `savePlanToSupabase` does `.upsert(...).select('id').single()`,
+  // so `upsert` must return a chainable, not a resolved Promise. The thenable
+  // chain mirrors the default-mock pattern: terminal calls (`single` /
+  // `maybeSingle`) resolve to `{data, error}`; awaiting the chain itself
+  // resolves to `{data: [], error: null}` for non-terminal queries.
+  const upsertSpy = vi.fn();
+  const makeUpsertChain = () => {
+    const chain: Record<string, unknown> = {
+      single: vi.fn().mockResolvedValue({
+        data: { id: 'mock-plan-id' },
+        error: null,
+      }),
+      maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+      then: (resolve: (v: { data: unknown[]; error: null }) => unknown) =>
+        resolve({ data: [], error: null }),
+    };
+    for (const method of ['select', 'eq', 'in', 'order', 'limit']) {
+      chain[method] = vi.fn(() => chain);
+    }
+    return chain;
+  };
+  upsertSpy.mockImplementation(() => makeUpsertChain());
 
   vi.mocked(supabase.from).mockImplementation((table: string) => ({
     select: vi.fn().mockReturnThis(),
@@ -142,6 +188,18 @@ function wrapper({ children }: { children: React.ReactNode }) {
   return <TrainingProvider>{children}</TrainingProvider>;
 }
 
+// Wave 9 / Item-4: TrainingProvider's mount-effect (`loadData`) is async —
+// `await supabase.auth.getUser()` always yields at least one microtask, so a
+// synchronously-seeded localStorage plan isn't reflected in `result.current`
+// until pending microtasks flush. `renderAndLoad` mounts the hook and then
+// `await act(async () => {})` to drain all queued work (Supabase load → null
+// → fallback to localStorage → setPlan), so callers can read `plan` directly.
+async function renderAndLoad() {
+  const hook = renderHook(() => useTraining(), { wrapper });
+  await act(async () => {});
+  return hook;
+}
+
 describe('TrainingContext', () => {
   beforeEach(() => {
     localStorageMock.clear();
@@ -157,22 +215,22 @@ describe('TrainingContext', () => {
       expect(result.current.error).toBeNull();
     });
 
-    it('loads plan from localStorage on mount', () => {
+    it('loads plan from localStorage on mount', async () => {
       const workout = createTestWorkout({ id: 'w1' });
       seedPlanInStorage([workout]);
 
-      const { result } = renderHook(() => useTraining(), { wrapper });
+      const { result } = await renderAndLoad();
       expect(result.current.plan).not.toBeNull();
       expect(result.current.plan?.currentWeek?.workouts).toHaveLength(1);
     });
   });
 
   describe('updateWorkoutStatus', () => {
-    it('updates workout status to completed', () => {
+    it('updates workout status to completed', async () => {
       const workout = createTestWorkout({ id: 'w1', status: 'planned' });
       seedPlanInStorage([workout]);
 
-      const { result } = renderHook(() => useTraining(), { wrapper });
+      const { result } = await renderAndLoad();
 
       act(() => {
         result.current.updateWorkoutStatus('w1', 'completed', {
@@ -187,11 +245,11 @@ describe('TrainingContext', () => {
       expect(updated?.actualData?.feeling).toBe(4);
     });
 
-    it('updates workout status to skipped', () => {
+    it('updates workout status to skipped', async () => {
       const workout = createTestWorkout({ id: 'w2', status: 'planned' });
       seedPlanInStorage([workout]);
 
-      const { result } = renderHook(() => useTraining(), { wrapper });
+      const { result } = await renderAndLoad();
 
       act(() => {
         result.current.updateWorkoutStatus('w2', 'skipped');
@@ -201,11 +259,11 @@ describe('TrainingContext', () => {
       expect(updated?.status).toBe('skipped');
     });
 
-    it('does nothing when workout ID not found', () => {
+    it('does nothing when workout ID not found', async () => {
       const workout = createTestWorkout({ id: 'w1' });
       seedPlanInStorage([workout]);
 
-      const { result } = renderHook(() => useTraining(), { wrapper });
+      const { result } = await renderAndLoad();
 
       act(() => {
         result.current.updateWorkoutStatus('nonexistent', 'completed');
@@ -218,14 +276,14 @@ describe('TrainingContext', () => {
   });
 
   describe('rescheduleWorkout', () => {
-    it('moves workout to a new date', () => {
+    it('moves workout to a new date', async () => {
       const workout = createTestWorkout({
         id: 'w1',
         date: new Date('2025-03-10'),
       });
       seedPlanInStorage([workout]);
 
-      const { result } = renderHook(() => useTraining(), { wrapper });
+      const { result } = await renderAndLoad();
 
       const newDate = new Date('2025-03-12');
       act(() => {
@@ -236,12 +294,12 @@ describe('TrainingContext', () => {
       expect(new Date(updated!.date).getDate()).toBe(12);
     });
 
-    it('does not affect other workouts', () => {
+    it('does not affect other workouts', async () => {
       const w1 = createTestWorkout({ id: 'w1', date: new Date('2025-03-10') });
       const w2 = createTestWorkout({ id: 'w2', date: new Date('2025-03-11'), name: 'Swim' });
       seedPlanInStorage([w1, w2]);
 
-      const { result } = renderHook(() => useTraining(), { wrapper });
+      const { result } = await renderAndLoad();
 
       act(() => {
         result.current.rescheduleWorkout('w1', new Date('2025-03-14'));
@@ -253,47 +311,47 @@ describe('TrainingContext', () => {
   });
 
   describe('getWorkoutsForDate', () => {
-    it('returns workouts matching the given date', () => {
+    it('returns workouts matching the given date', async () => {
       const w1 = createTestWorkout({ id: 'w1', date: new Date('2025-03-10') });
       const w2 = createTestWorkout({ id: 'w2', date: new Date('2025-03-10'), name: 'Swim' });
       const w3 = createTestWorkout({ id: 'w3', date: new Date('2025-03-11'), name: 'Bike' });
       seedPlanInStorage([w1, w2, w3]);
 
-      const { result } = renderHook(() => useTraining(), { wrapper });
+      const { result } = await renderAndLoad();
       const workouts = result.current.getWorkoutsForDate(new Date('2025-03-10'));
       expect(workouts).toHaveLength(2);
     });
 
-    it('returns empty array for dates with no workouts', () => {
+    it('returns empty array for dates with no workouts', async () => {
       const w1 = createTestWorkout({ id: 'w1', date: new Date('2025-03-10') });
       seedPlanInStorage([w1]);
 
-      const { result } = renderHook(() => useTraining(), { wrapper });
+      const { result } = await renderAndLoad();
       const workouts = result.current.getWorkoutsForDate(new Date('2025-03-15'));
       expect(workouts).toHaveLength(0);
     });
 
-    it('returns empty array when no plan exists', () => {
-      const { result } = renderHook(() => useTraining(), { wrapper });
+    it('returns empty array when no plan exists', async () => {
+      const { result } = await renderAndLoad();
       const workouts = result.current.getWorkoutsForDate(new Date());
       expect(workouts).toHaveLength(0);
     });
   });
 
   describe('getWorkoutById', () => {
-    it('finds workout by ID', () => {
+    it('finds workout by ID', async () => {
       const w1 = createTestWorkout({ id: 'target-workout', name: 'Target Run' });
       seedPlanInStorage([w1]);
 
-      const { result } = renderHook(() => useTraining(), { wrapper });
+      const { result } = await renderAndLoad();
       const found = result.current.getWorkoutById('target-workout');
       expect(found?.name).toBe('Target Run');
     });
 
-    it('returns undefined for unknown ID', () => {
+    it('returns undefined for unknown ID', async () => {
       seedPlanInStorage([createTestWorkout({ id: 'w1' })]);
 
-      const { result } = renderHook(() => useTraining(), { wrapper });
+      const { result } = await renderAndLoad();
       expect(result.current.getWorkoutById('unknown')).toBeUndefined();
     });
   });
@@ -311,10 +369,10 @@ describe('TrainingContext', () => {
   });
 
   describe('resetPlan', () => {
-    it('clears plan and localStorage', () => {
+    it('clears plan and localStorage', async () => {
       seedPlanInStorage([createTestWorkout()]);
 
-      const { result } = renderHook(() => useTraining(), { wrapper });
+      const { result } = await renderAndLoad();
       expect(result.current.plan).not.toBeNull();
 
       act(() => {

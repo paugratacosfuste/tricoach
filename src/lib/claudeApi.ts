@@ -256,15 +256,19 @@ ${isRecovery ? '- This is recovery week: shorter sessions, lower intensity, but 
 // ============================================
 
 /**
- * Attempts to fix truncated or malformed JSON
+ * Attempts to fix truncated or malformed JSON.
+ *
+ * Wave 9 / Item-4: uses a stack of expected closers so that nested structures
+ * close in the correct order. The previous implementation tracked `{` and `[`
+ * with separate counters and emitted all `]`s before all `}`s — wrong when
+ * an array sits inside an object (e.g. `{"workouts": [{"a":1`), producing
+ * invalid JSON like `…"a":1]}}` instead of `…"a":1}]}`.
  */
 export function fixTruncatedJson(str: string): string {
   // Remove markdown code blocks
   str = str.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
 
-  // Count brackets
-  let openBraces = 0;
-  let openBrackets = 0;
+  const expected: string[] = []; // stack of expected closing chars
   let inString = false;
   let escapeNext = false;
 
@@ -286,11 +290,16 @@ export function fixTruncatedJson(str: string): string {
       continue;
     }
 
-    if (!inString) {
-      if (char === '{') openBraces++;
-      if (char === '}') openBraces--;
-      if (char === '[') openBrackets++;
-      if (char === ']') openBrackets--;
+    if (inString) continue;
+
+    if (char === '{') expected.push('}');
+    else if (char === '[') expected.push(']');
+    else if (
+      (char === '}' || char === ']') &&
+      expected.length > 0 &&
+      expected[expected.length - 1] === char
+    ) {
+      expected.pop();
     }
   }
 
@@ -299,21 +308,15 @@ export function fixTruncatedJson(str: string): string {
     str += '"';
   }
 
-  // Remove trailing commas
+  // Remove trailing comma before appending closers
   str = str.replace(/,\s*$/, '');
 
-  // Add missing brackets/braces
-  while (openBrackets > 0) {
-    str = str.replace(/,\s*$/, '') + ']';
-    openBrackets--;
+  // Pop closers in LIFO order — matches actual nesting.
+  while (expected.length > 0) {
+    str = str.replace(/,\s*$/, '') + expected.pop()!;
   }
 
-  while (openBraces > 0) {
-    str = str.replace(/,\s*$/, '') + '}';
-    openBraces--;
-  }
-
-  // Clean trailing commas before closing brackets
+  // Final pass: clean trailing commas before closing brackets / braces.
   str = str.replace(/,\s*}/g, '}').replace(/,\s*]/g, ']');
 
   return str;
@@ -501,13 +504,23 @@ export function createWeekSummary(week: WeekPlan, feedback: WeekFeedback): WeekS
       notes: w.actualData?.notes,
     }));
 
+  // Wave 9 / Item-4: completion rate ignores rest days on BOTH sides.
+  // Previously the numerator counted a "completed" rest day as a successful
+  // workout while the denominator excluded all rest days — inflating the
+  // rate by one workout and giving 80% where the user actually trained 60%.
+  const nonRestWorkouts = week.workouts.filter((w) => w.type !== 'rest');
+  const completedNonRest = nonRestWorkouts.filter((w) => w.status === 'completed');
+  const completionRate = nonRestWorkouts.length === 0
+    ? 0
+    : Math.round((completedNonRest.length / nonRestWorkouts.length) * 100);
+
   return {
     weekNumber: week.weekNumber,
     phase: week.phase,
     theme: week.theme,
     plannedHours,
     completedHours: Math.round(completedHours * 10) / 10,
-    completionRate: Math.round((completedWorkouts.length / week.workouts.filter(w => w.type !== 'rest').length) * 100),
+    completionRate,
     keyWorkouts,
     feedback,
   };
