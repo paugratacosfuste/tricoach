@@ -4,8 +4,15 @@ import {
   parseWeekResponse,
   buildHistoryContext,
   createWeekSummary,
+  buildWeekPrompt,
+  PROMPT_VERSION,
 } from '../claudeApi';
-import type { CompletedWeek, WeekPlan, WeekFeedback } from '@/types/training';
+import type {
+  CompletedWeek,
+  WeekPlan,
+  WeekFeedback,
+  OnboardingData,
+} from '@/types/training';
 
 // ============================================
 // fixTruncatedJson
@@ -347,5 +354,102 @@ describe('createWeekSummary', () => {
     expect(summary.phase).toBe('Build 1');
     expect(summary.theme).toBe('Build Phase');
     expect(summary.plannedHours).toBe(7.5);
+  });
+});
+
+// ============================================
+// Phase 1.C — buildWeekPrompt → { system, user }
+// ============================================
+//
+// The prompt is split so the static portion can be served from Anthropic's
+// prompt cache in 1.D. The system half MUST stay byte-identical across
+// users / weeks / race types — anything dynamic belongs in the user half.
+// These tests are the contract: if a future edit moves athlete data into
+// `system`, caching breaks silently and cost balloons.
+
+function makeUserData(overrides?: Partial<OnboardingData>): OnboardingData {
+  return {
+    profile: { firstName: 'Pau', age: 30, gender: 'male', weight: 72, height: 178 },
+    fitness: {
+      fitnessLevel: 'intermediate',
+      lthr: 165,
+      thresholdPace: '4:30',
+      maxHR: 190,
+      swimLevel: 'comfortable',
+    },
+    goal: {
+      raceType: 'olympic-triathlon',
+      raceName: 'Test Race',
+      raceDate: new Date('2026-09-01'),
+      priority: 'finish',
+    },
+    availability: {
+      monday: { available: true, timeSlots: ['evening'], maxDuration: '60min' },
+      tuesday: { available: true, timeSlots: ['evening'], maxDuration: '60min' },
+      wednesday: { available: true, timeSlots: ['evening'], maxDuration: '60min' },
+      thursday: { available: true, timeSlots: ['evening'], maxDuration: '60min' },
+      friday: { available: false, timeSlots: [], maxDuration: '30min' },
+      saturday: { available: true, timeSlots: ['morning'], maxDuration: '2h', longSession: true },
+      sunday: { available: true, timeSlots: ['morning'], maxDuration: '2h30', longSession: true },
+      weeklyHoursTarget: '8-10h',
+    },
+    integrations: {
+      googleCalendar: { connected: false, avoidConflicts: true },
+      strava: { connected: false, autoComplete: true },
+    },
+    ...overrides,
+  };
+}
+
+describe('PROMPT_VERSION', () => {
+  it('is a non-empty string in <YYYY-MM-DD>.<n> format', () => {
+    expect(typeof PROMPT_VERSION).toBe('string');
+    expect(PROMPT_VERSION.length).toBeGreaterThan(0);
+    expect(PROMPT_VERSION).toMatch(/^\d{4}-\d{2}-\d{2}\.\d+$/);
+  });
+});
+
+describe('buildWeekPrompt', () => {
+  // SECURITY (Phase 1.C HIGH finding): the client builder returns ONLY the
+  // dynamic user half. The static SYSTEM_PROMPT lives server-side
+  // (`api/_lib/systemPrompt.ts`) so an authenticated user can't curl
+  // their own safety-bypassing payload. Safety-line + cache-invariant
+  // tests for the system half live in `api/_lib/__tests__/systemPrompt.test.ts`.
+
+  it('returns a non-empty user string and no other public fields', () => {
+    const out = buildWeekPrompt(makeUserData(), 1, 12, []);
+    expect(typeof out.user).toBe('string');
+    expect(out.user.length).toBeGreaterThan(100);
+    expect(Object.keys(out)).toEqual(['user']);
+  });
+
+  it('user prompt contains the dynamic athlete profile + race goal + week number', () => {
+    const { user } = buildWeekPrompt(makeUserData(), 5, 12, []);
+    expect(user).toContain('Pau');
+    expect(user).toContain('Test Race');
+    expect(user).toContain('5');     // week number
+    expect(user).toContain('12');    // total weeks
+    expect(user).toContain('165');   // LTHR
+  });
+
+  it('user prompt includes triathlon discipline guidance for triathlon races but not for run-only races', () => {
+    const tri = buildWeekPrompt(makeUserData(), 1, 12, []);
+    const run = buildWeekPrompt(
+      makeUserData({
+        goal: {
+          raceType: 'marathon',
+          raceName: 'Boston',
+          raceDate: new Date('2026-04-20'),
+          priority: 'finish',
+        },
+      }),
+      1,
+      12,
+      [],
+    );
+    expect(tri.user).toMatch(/swim/i);
+    expect(tri.user).toMatch(/bike/i);
+    expect(tri.user).toMatch(/2 swim, 2 bike, 2 run|2 sessions per week/i);
+    expect(run.user).not.toMatch(/2 swim, 2 bike, 2 run/i);
   });
 });

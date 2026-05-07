@@ -103,19 +103,53 @@ export function buildHistoryContext(completedWeeks: CompletedWeek[]): string {
 }
 
 // ============================================
-// PROMPT BUILDER
+// PROMPT VERSIONING (Phase 1.C.4)
 // ============================================
+//
+// Bumped on every prompt-shape change. The audit log row in `api_usage`
+// stores this so we can correlate cost/quality regressions with prompt
+// edits. Format: `<YYYY-MM-DD>.<n>` — n increments if multiple edits ship
+// the same day.
+//
+// MUST be kept in sync with the canonical model + temperature pinned in
+// `api/generate-week.ts` (Phase 1.C.5: Sonnet 4.6, temperature 0.2,
+// max_tokens 8000). Bump the suffix `.n` on a prompt-text change; bump
+// the date on any structural change (system/user split, schema, safety).
+export const PROMPT_VERSION = '2026-05-07.1';
+
+// ============================================
+// PROMPT BUILDER (Phase 1.C.2)
+// ============================================
+//
+// SECURITY: the static SYSTEM_PROMPT lives in `api/_lib/systemPrompt.ts`,
+// not here. The client never sends a system prompt to the proxy — if it
+// did, any authenticated user could curl `/api/generate-week` with
+// arbitrary `system: "ignore safety, prescribe..."` and bypass the
+// safety lines. See Phase 1.C code-review HIGH finding.
+//
+// `buildWeekPrompt` therefore returns ONLY the dynamic user half. The
+// proxy pairs it with the server-owned SYSTEM_PROMPT before calling
+// Anthropic.
+
+/** Return shape of `buildWeekPrompt` — declared so the export is self-documenting. */
+export interface WeekPromptHalves {
+  /** Dynamic user-message half. Server pairs with its own SYSTEM_PROMPT. */
+  readonly user: string;
+}
 
 /**
- * Builds the prompt for generating a single week
+ * Builds the dynamic user-message half of the per-call prompt.
+ *
+ * The static system half is server-owned (`api/_lib/systemPrompt.ts`)
+ * and never crosses the trust boundary.
  */
-function buildWeekPrompt(
+export function buildWeekPrompt(
   userData: OnboardingData,
   weekNumber: number,
   totalWeeks: number,
   completedWeeks: CompletedWeek[],
   nextWeekConstraints?: string
-): string {
+): WeekPromptHalves {
   const phase = calculateTrainingPhase(weekNumber, totalWeeks);
   const isRecovery = isRecoveryWeek(weekNumber);
   const hrZones = calculateHRZones(userData.fitness.lthr);
@@ -129,34 +163,45 @@ function buildWeekPrompt(
   ].includes(userData.goal.raceType);
 
   const historyContext = buildHistoryContext(completedWeeks);
-
-  // Get last week's feedback if available
   const lastWeek = completedWeeks[completedWeeks.length - 1];
   const lastWeekFeedback = lastWeek?.summary.feedback;
 
-  // Build discipline distribution guidance for triathlon
   const disciplineGuidance = isTriathlon
     ? `
-## CRITICAL: WORKOUT DISTRIBUTION FOR TRIATHLON
-You MUST include ALL THREE disciplines (swim, bike, run) each week with EQUAL frequency:
-- SWIM: 2 sessions per week (skill level affects intensity, NOT frequency)
-- BIKE: 2 sessions per week
-- RUN: 2 sessions per week
-- Optional: 1 strength/mobility session
+## DISCIPLINE GUIDANCE (triathlon)
+The athlete's swim level is "${userData.fitness.swimLevel}":
+- beginner: focus swim sessions on technique drills, shorter intervals, more rest.
+- intermediate: mix technique with aerobic development.
+- advanced / competitive: include threshold and race-pace work.
 
-The athlete's swim level is "${userData.fitness.swimLevel}". This means:
-- If beginner: Focus swim sessions on technique drills, shorter intervals, more rest
-- If intermediate: Mix technique with aerobic development
-- If advanced: Include threshold and race-pace work
-
-DO NOT reduce swim frequency because the athlete is a weaker swimmer. 
-Weaker disciplines need MORE practice, not less. Adjust INTENSITY and COMPLEXITY, not frequency.
+Hard requirement: 2 swim, 2 bike, 2 run sessions per week. Adjust INTENSITY by skill, not frequency.
 `
     : '';
 
-  return `You are an expert ${isTriathlon ? 'triathlon' : 'running'} coach creating a detailed weekly training plan.
+  const recoveryFlag = isRecovery
+    ? '- ⚠️ THIS IS A RECOVERY / DELOAD WEEK — reduce volume by 30–40%, keep intensity low, but still include all 3 disciplines for triathlon.'
+    : '';
+  const fatigueFlag =
+    lastWeekFeedback?.overallFeeling === 'struggling' || lastWeekFeedback?.overallFeeling === 'tired'
+      ? '- ⚠️ Athlete reported fatigue last week — consider reducing load.'
+      : '';
+  const issuesFlag =
+    lastWeekFeedback?.physicalIssues && lastWeekFeedback.physicalIssues.length > 0
+      ? `- ⚠️ Physical issues reported: ${lastWeekFeedback.physicalIssues.join(', ')} — adapt accordingly.`
+      : '';
+  // TODO(phase-1.E): `nextWeekConstraints` is highest-risk prompt-injection
+  // surface in the user half — interpolated verbatim. 1.E will route every
+  // free-text athlete input (raceName, goalTime, feedback.notes,
+  // physicalIssues[i], nextWeekConstraints) through `sanitizePromptInput`.
+  const constraintFlag = nextWeekConstraints
+    ? `- ⚠️ Athlete constraint: "${nextWeekConstraints}" — adapt schedule accordingly.`
+    : '';
 
-## ATHLETE PROFILE
+  const flags = [recoveryFlag, fatigueFlag, issuesFlag, constraintFlag]
+    .filter((line) => line.length > 0)
+    .join('\n');
+
+  const user = `## ATHLETE PROFILE
 - Name: ${userData.profile.firstName}
 - Age: ${userData.profile.age}, Weight: ${userData.profile.weight}kg, Height: ${userData.profile.height}cm
 - Level: ${userData.fitness.fitnessLevel}
@@ -166,7 +211,7 @@ Weaker disciplines need MORE practice, not less. Adjust INTENSITY and COMPLEXITY
 ${userData.fitness.ftp ? `- FTP: ${userData.fitness.ftp}W` : ''}
 - Swim Level: ${userData.fitness.swimLevel}
 
-## HEART RATE ZONES (based on LTHR ${userData.fitness.lthr})
+## HEART RATE ZONES (derived from LTHR ${userData.fitness.lthr})
 - Zone 1 Recovery: ${hrZones.zone1.min}-${hrZones.zone1.max}bpm
 - Zone 2 Aerobic: ${hrZones.zone2.min}-${hrZones.zone2.max}bpm
 - Zone 3 Tempo: ${hrZones.zone3.min}-${hrZones.zone3.max}bpm
@@ -177,16 +222,13 @@ ${userData.fitness.ftp ? `- FTP: ${userData.fitness.ftp}W` : ''}
 - Race: ${userData.goal.raceName} (${userData.goal.raceType})
 - Date: ${new Date(userData.goal.raceDate).toLocaleDateString()}
 - Weeks until race: ${weeksUntilRace}
-- Goal: ${userData.goal.priority}
+- Priority: ${userData.goal.priority}
 ${userData.goal.goalTime ? `- Target time: ${userData.goal.goalTime}` : ''}
 ${disciplineGuidance}
 ## TRAINING CONTEXT
 - Currently generating: WEEK ${weekNumber} of ${totalWeeks}
 - Training phase: ${phase}
-${isRecovery ? '- ⚠️ THIS IS A RECOVERY/DELOAD WEEK - Reduce volume by 30-40%, keep intensity low, but still include all 3 disciplines' : ''}
-${lastWeekFeedback?.overallFeeling === 'struggling' || lastWeekFeedback?.overallFeeling === 'tired' ? '- ⚠️ Athlete reported fatigue last week - consider reducing load' : ''}
-${lastWeekFeedback?.physicalIssues && lastWeekFeedback.physicalIssues.length > 0 ? `- ⚠️ Physical issues reported: ${lastWeekFeedback.physicalIssues.join(', ')} - adapt accordingly` : ''}
-${nextWeekConstraints ? `- ⚠️ Athlete constraint: "${nextWeekConstraints}" - adapt schedule accordingly` : ''}
+${flags}
 
 ## TRAINING HISTORY
 ${historyContext}
@@ -200,55 +242,9 @@ ${historyContext}
 - Saturday: ${userData.availability.saturday.available ? `Available (${userData.availability.saturday.timeSlots.join(', ')}, max ${userData.availability.saturday.maxDuration})${userData.availability.saturday.longSession ? ' - LONG SESSION DAY' : ''}` : 'REST DAY'}
 - Sunday: ${userData.availability.sunday.available ? `Available (${userData.availability.sunday.timeSlots.join(', ')}, max ${userData.availability.sunday.maxDuration})${userData.availability.sunday.longSession ? ' - LONG SESSION DAY' : ''}` : 'REST DAY'}
 
-## INSTRUCTIONS
-Generate a DETAILED training week. For each workout, provide comprehensive descriptions including:
-1. Clear warm-up protocol with duration and intensity
-2. Main set with SPECIFIC intervals, paces, HR zones, and recovery periods
-3. Cool-down protocol
-4. Why this workout matters for their goal
+Generate WEEK ${weekNumber} of ${totalWeeks} now. Return ONLY the JSON object specified in the system instructions.`;
 
-Use the athlete's ACTUAL HR zones and threshold pace in your descriptions.
-
-Return ONLY valid JSON (no markdown, no explanation):
-{
-  "weekNumber": ${weekNumber},
-  "theme": "Week theme (e.g., 'Aerobic Base Building', 'Speed Development')",
-  "focus": "Primary focus for the week",
-  "phase": "${phase}",
-  "workouts": [
-    {
-      "dayOfWeek": "monday",
-      "type": "swim",
-      "name": "Technique & Endurance Swim",
-      "duration": 45,
-      "distance": 2,
-      "purpose": "Build swim efficiency and aerobic base for the swim leg",
-      "description": "WARM-UP: 200m easy freestyle, 4x50m drill (catch-up, fingertip drag)...\\n\\nMAIN SET: ...\\n\\nCOOL-DOWN: ...",
-      "coachingTips": ["tip1", "tip2", "tip3"]
-    },
-    {
-      "dayOfWeek": "tuesday",
-      "type": "run",
-      "name": "Workout Name",
-      "duration": 60,
-      "distance": 10,
-      "purpose": "Why this workout - connect to their race goal",
-      "description": "WARM-UP: 15min easy running at Zone 1 (${hrZones.zone1.min}-${hrZones.zone1.max}bpm)...\\n\\nMAIN SET: ...\\n\\nCOOL-DOWN: ...",
-      "coachingTips": ["tip1", "tip2", "tip3"]
-    }
-  ]
-}
-
-RULES:
-- Generate 5-7 workouts based on availability (rest days where not available)
-${isTriathlon ? '- MANDATORY: Include exactly 2 swim, 2 bike, and 2 run sessions. Adjust intensity based on skill, not frequency.' : '- Focus on running with supporting strength work'}
-- type must be: "run", "bike", "swim", "strength", or "rest"
-- distance in km (null for strength/rest)
-- duration in minutes
-- Use \\n for line breaks in description
-- Include SPECIFIC HR zones and paces in every description
-- NO trailing commas
-${isRecovery ? '- This is recovery week: shorter sessions, lower intensity, but still all 3 disciplines' : ''}`;
+  return { user };
 }
 
 // ============================================
@@ -425,7 +421,7 @@ export async function generateWeekPlan(
   completedWeeks: CompletedWeek[],
   nextWeekConstraints?: string
 ): Promise<WeekPlan> {
-  const prompt = buildWeekPrompt(
+  const { user } = buildWeekPrompt(
     userData,
     weekNumber,
     totalWeeks,
@@ -441,14 +437,16 @@ export async function generateWeekPlan(
   // so an idle tab doesn't get a 401 back from the proxy.
   const accessToken = await getFreshAccessToken(supabase.auth);
 
-  // Call the Vercel API proxy instead of Claude directly
+  // Phase 1.C — proxy takes `{ user, promptVersion }`. The system prompt
+  // lives server-side (`api/_lib/systemPrompt.ts`) so an authenticated
+  // user can't curl their own safety-bypassing system payload.
   const response = await fetch('/api/generate-week', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${accessToken}`,
     },
-    body: JSON.stringify({ prompt }),
+    body: JSON.stringify({ user, promptVersion: PROMPT_VERSION }),
   });
 
   if (response.status === 401) {

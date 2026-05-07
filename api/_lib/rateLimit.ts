@@ -40,6 +40,16 @@ export interface RecordCallInput {
   readonly inputTokens: number;
   readonly outputTokens: number;
   readonly costUsd: number;
+  /**
+   * Phase 1.C.4 — prompt-version string the client computed for this call.
+   * Used to correlate cost / quality regressions with prompt edits.
+   *
+   * NEW CALLERS: pass `'unknown'` rather than omitting this field. The
+   * Supabase store writes `null` to `prompt_version` when omitted (legacy
+   * back-compat); only the `/api/generate-week` handler currently
+   * normalises a missing value to the literal `'unknown'`.
+   */
+  readonly promptVersion?: string;
 }
 
 const HOUR_SECONDS = 60 * 60;
@@ -213,6 +223,9 @@ export function defaultUsageStore(): UsageStore {
         input_tokens: input.inputTokens,
         output_tokens: input.outputTokens,
         cost_usd: input.costUsd,
+        // Phase 1.C.4 — Postgres column is nullable; emit null rather than
+        // the literal 'undefined' for legacy callers that don't pass it.
+        prompt_version: input.promptVersion ?? null,
       };
 
       // Item-9: retry once on transient failure. If only the first attempt

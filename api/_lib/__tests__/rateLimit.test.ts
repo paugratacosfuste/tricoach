@@ -274,4 +274,24 @@ describe("defaultUsageStore.recordCall — retry on transient INSERT failure (It
     expect(insertSpy).toHaveBeenCalledTimes(2);
     expect(warnSpy).toHaveBeenCalledOnce();
   });
+
+  // ── Phase 1.C.4 — prompt_version round-trips into the INSERT payload ──
+  it("writes the supplied promptVersion to the prompt_version column", async () => {
+    const { insertSpy } = mockInsertResults([{ error: null }]);
+    await defaultUsageStore().recordCall({
+      ...sampleInput,
+      promptVersion: "2026-05-07.1",
+    });
+    expect(insertSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ prompt_version: "2026-05-07.1" }),
+    );
+  });
+
+  it("writes prompt_version=null when promptVersion is omitted (legacy callers)", async () => {
+    const { insertSpy } = mockInsertResults([{ error: null }]);
+    await defaultUsageStore().recordCall(sampleInput);
+    expect(insertSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ prompt_version: null }),
+    );
+  });
 });
