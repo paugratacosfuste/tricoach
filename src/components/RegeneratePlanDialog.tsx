@@ -19,6 +19,10 @@ interface RegeneratePlanDialogProps {
 }
 
 const MIN_CHARS = 10;
+// Phase 1.E.3 — server-side `sanitizePromptInput` truncates at 500
+// regardless; cap the input here so the user sees the limit before the
+// proxy silently trims their prose.
+const MAX_CHARS = 500;
 
 export function RegeneratePlanDialog({
   isOpen,
@@ -63,10 +67,22 @@ export function RegeneratePlanDialog({
             placeholder="e.g., 'I want more swimming sessions', 'Reduce intensity this week', 'Add a brick workout'..."
             className="min-h-[120px] resize-none"
             disabled={isLoading}
+            maxLength={MAX_CHARS}
           />
-          <p className={`text-xs ${isValid ? 'text-green-500' : 'text-muted-foreground'}`}>
-            {comment.trim().length}/{MIN_CHARS} min characters
-          </p>
+          <div className="flex items-center justify-between text-xs">
+            <span className={isValid ? 'text-green-500' : 'text-muted-foreground'}>
+              {comment.trim().length}/{MIN_CHARS} min characters
+            </span>
+            <span
+              className={
+                comment.length >= MAX_CHARS
+                  ? 'text-red-500'
+                  : 'text-muted-foreground'
+              }
+            >
+              {comment.length} / {MAX_CHARS}
+            </span>
+          </div>
         </div>
 
         <DialogFooter>

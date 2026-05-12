@@ -17,6 +17,7 @@ import {
 } from '@/types/training';
 import { supabase } from '@/lib/supabase';
 import { getFreshAccessToken } from '@/lib/auth/freshToken';
+import { sanitizePromptInput } from '@/lib/sanitize';
 
 // Get the API key from environment variables
 // NOTE: The API key is now server-side only via Vercel API route.
@@ -50,9 +51,18 @@ export function buildHistoryContext(completedWeeks: CompletedWeek[]): string {
       // Supabase before the feedback shape was fully populated, these
       // fields can be missing. Fall back to safe defaults so the prompt
       // still renders rather than throwing.
-      const physicalIssues = week.summary.feedback?.physicalIssues ?? [];
-      const notes = week.summary.feedback?.notes ?? '';
-      const overallFeeling = week.summary.feedback?.overallFeeling ?? 'okay';
+      // Phase 1.E — physicalIssues entries + notes are athlete-supplied
+      // free text and must be sanitised before interpolation.
+      const physicalIssues = (week.summary.feedback?.physicalIssues ?? [])
+        .map((issue) => sanitizePromptInput(issue))
+        .filter((issue) => issue.length > 0);
+      const notes = sanitizePromptInput(week.summary.feedback?.notes ?? '');
+      // Phase 1.E (code-review MEDIUM) — overallFeeling is a TS enum at
+      // the type boundary but not enforced at runtime until Phase 3.A
+      // Zod. Sanitise for parity with the other interpolated fields.
+      const overallFeeling = sanitizePromptInput(
+        week.summary.feedback?.overallFeeling ?? 'okay',
+      ) || 'okay';
       parts.push(
         `- Week ${week.weekNumber} (${week.phase}): ` +
         `${week.summary.completedHours.toFixed(1)}h of ${week.summary.plannedHours.toFixed(1)}h ` +
@@ -77,8 +87,13 @@ export function buildHistoryContext(completedWeeks: CompletedWeek[]): string {
     const totalHours = olderWeeks.reduce((sum, w) => sum + w.summary.completedHours, 0);
     const phases = [...new Set(olderWeeks.map((w) => w.phase))];
 
-    // Check for recurring issues
-    const allIssues = olderWeeks.flatMap((w) => w.summary.feedback.physicalIssues);
+    // Check for recurring issues. Phase 1.E — sanitise each issue string
+    // before counting / interpolating; otherwise an athlete who logged
+    // `<script>` twice would surface that token in the prompt.
+    const allIssues = olderWeeks
+      .flatMap((w) => w.summary.feedback.physicalIssues)
+      .map((issue) => sanitizePromptInput(issue))
+      .filter((issue) => issue.length > 0);
     const issueCounts: Record<string, number> = {};
     allIssues.forEach((issue) => {
       issueCounts[issue] = (issueCounts[issue] || 0) + 1;
@@ -166,10 +181,28 @@ export function buildWeekPrompt(
   const lastWeek = completedWeeks[completedWeeks.length - 1];
   const lastWeekFeedback = lastWeek?.summary.feedback;
 
+  // Phase 1.E — every athlete-supplied free-text field that flows into
+  // the prompt MUST be sanitised. The string fields below are TS enums
+  // / free-text at the type boundary but not enforced at runtime until
+  // Phase 3.A Zod schemas; sanitise as defence-in-depth.
+  // Code-review HIGH (Phase 1.E): firstName is athlete-controlled at
+  // sign-up — without sanitisation a crafted name like "\n## SYSTEM\n..."
+  // forges a new prompt section.
+  const safeFirstName = sanitizePromptInput(userData.profile.firstName);
+  const safeFitnessLevel = sanitizePromptInput(userData.fitness.fitnessLevel);
+  const safeThresholdPace = sanitizePromptInput(userData.fitness.thresholdPace);
+  const safeSwimLevel = sanitizePromptInput(userData.fitness.swimLevel);
+  const safeRaceName = sanitizePromptInput(userData.goal.raceName);
+  const safeGoalTime = sanitizePromptInput(userData.goal.goalTime ?? '');
+  const safeIssues = (lastWeekFeedback?.physicalIssues ?? [])
+    .map((issue) => sanitizePromptInput(issue))
+    .filter((issue) => issue.length > 0);
+  const safeConstraints = sanitizePromptInput(nextWeekConstraints ?? '');
+
   const disciplineGuidance = isTriathlon
     ? `
 ## DISCIPLINE GUIDANCE (triathlon)
-The athlete's swim level is "${userData.fitness.swimLevel}":
+The athlete's swim level is "${safeSwimLevel}":
 - beginner: focus swim sessions on technique drills, shorter intervals, more rest.
 - intermediate: mix technique with aerobic development.
 - advanced / competitive: include threshold and race-pace work.
@@ -186,30 +219,44 @@ Hard requirement: 2 swim, 2 bike, 2 run sessions per week. Adjust INTENSITY by s
       ? '- ⚠️ Athlete reported fatigue last week — consider reducing load.'
       : '';
   const issuesFlag =
-    lastWeekFeedback?.physicalIssues && lastWeekFeedback.physicalIssues.length > 0
-      ? `- ⚠️ Physical issues reported: ${lastWeekFeedback.physicalIssues.join(', ')} — adapt accordingly.`
+    safeIssues.length > 0
+      ? `- ⚠️ Physical issues reported: ${safeIssues.join(', ')} — adapt accordingly.`
       : '';
-  // TODO(phase-1.E): `nextWeekConstraints` is highest-risk prompt-injection
-  // surface in the user half — interpolated verbatim. 1.E will route every
-  // free-text athlete input (raceName, goalTime, feedback.notes,
-  // physicalIssues[i], nextWeekConstraints) through `sanitizePromptInput`.
-  const constraintFlag = nextWeekConstraints
-    ? `- ⚠️ Athlete constraint: "${nextWeekConstraints}" — adapt schedule accordingly.`
+  const constraintFlag = safeConstraints
+    ? `- ⚠️ Athlete constraint: "${safeConstraints}" — adapt schedule accordingly.`
     : '';
 
   const flags = [recoveryFlag, fatigueFlag, issuesFlag, constraintFlag]
     .filter((line) => line.length > 0)
     .join('\n');
 
+  // Phase 1.E (security review HIGH) — `availability.timeSlots[i]` and
+  // `availability.maxDuration` are TS string-literal unions but not
+  // runtime-validated until Phase 3.A. Sanitise per-day so a corrupt DB
+  // row containing a forged "## SYSTEM" payload can't surface in the
+  // weekly-availability block.
+  const formatDay = (
+    day: typeof userData.availability.monday & { longSession?: boolean },
+  ): string => {
+    if (!day.available) return 'REST DAY';
+    const slots = day.timeSlots
+      .map((s) => sanitizePromptInput(s))
+      .filter((s) => s.length > 0)
+      .join(', ');
+    const maxDur = sanitizePromptInput(day.maxDuration);
+    const long = day.longSession ? ' - LONG SESSION DAY' : '';
+    return `Available (${slots}, max ${maxDur})${long}`;
+  };
+
   const user = `## ATHLETE PROFILE
-- Name: ${userData.profile.firstName}
+- Name: ${safeFirstName}
 - Age: ${userData.profile.age}, Weight: ${userData.profile.weight}kg, Height: ${userData.profile.height}cm
-- Level: ${userData.fitness.fitnessLevel}
+- Level: ${safeFitnessLevel}
 - Max HR: ${userData.fitness.maxHR}bpm
 - LTHR: ${userData.fitness.lthr}bpm
-- Threshold Pace: ${userData.fitness.thresholdPace}/km
+- Threshold Pace: ${safeThresholdPace}/km
 ${userData.fitness.ftp ? `- FTP: ${userData.fitness.ftp}W` : ''}
-- Swim Level: ${userData.fitness.swimLevel}
+- Swim Level: ${safeSwimLevel}
 
 ## HEART RATE ZONES (derived from LTHR ${userData.fitness.lthr})
 - Zone 1 Recovery: ${hrZones.zone1.min}-${hrZones.zone1.max}bpm
@@ -219,11 +266,11 @@ ${userData.fitness.ftp ? `- FTP: ${userData.fitness.ftp}W` : ''}
 - Zone 5 VO2max: ${hrZones.zone5.min}-${hrZones.zone5.max}bpm
 
 ## RACE GOAL
-- Race: ${userData.goal.raceName} (${userData.goal.raceType})
+- Race: ${safeRaceName} (${userData.goal.raceType})
 - Date: ${new Date(userData.goal.raceDate).toLocaleDateString()}
 - Weeks until race: ${weeksUntilRace}
 - Priority: ${userData.goal.priority}
-${userData.goal.goalTime ? `- Target time: ${userData.goal.goalTime}` : ''}
+${safeGoalTime ? `- Target time: ${safeGoalTime}` : ''}
 ${disciplineGuidance}
 ## TRAINING CONTEXT
 - Currently generating: WEEK ${weekNumber} of ${totalWeeks}
@@ -234,13 +281,13 @@ ${flags}
 ${historyContext}
 
 ## WEEKLY AVAILABILITY
-- Monday: ${userData.availability.monday.available ? `Available (${userData.availability.monday.timeSlots.join(', ')}, max ${userData.availability.monday.maxDuration})` : 'REST DAY'}
-- Tuesday: ${userData.availability.tuesday.available ? `Available (${userData.availability.tuesday.timeSlots.join(', ')}, max ${userData.availability.tuesday.maxDuration})` : 'REST DAY'}
-- Wednesday: ${userData.availability.wednesday.available ? `Available (${userData.availability.wednesday.timeSlots.join(', ')}, max ${userData.availability.wednesday.maxDuration})` : 'REST DAY'}
-- Thursday: ${userData.availability.thursday.available ? `Available (${userData.availability.thursday.timeSlots.join(', ')}, max ${userData.availability.thursday.maxDuration})` : 'REST DAY'}
-- Friday: ${userData.availability.friday.available ? `Available (${userData.availability.friday.timeSlots.join(', ')}, max ${userData.availability.friday.maxDuration})` : 'REST DAY'}
-- Saturday: ${userData.availability.saturday.available ? `Available (${userData.availability.saturday.timeSlots.join(', ')}, max ${userData.availability.saturday.maxDuration})${userData.availability.saturday.longSession ? ' - LONG SESSION DAY' : ''}` : 'REST DAY'}
-- Sunday: ${userData.availability.sunday.available ? `Available (${userData.availability.sunday.timeSlots.join(', ')}, max ${userData.availability.sunday.maxDuration})${userData.availability.sunday.longSession ? ' - LONG SESSION DAY' : ''}` : 'REST DAY'}
+- Monday: ${formatDay(userData.availability.monday)}
+- Tuesday: ${formatDay(userData.availability.tuesday)}
+- Wednesday: ${formatDay(userData.availability.wednesday)}
+- Thursday: ${formatDay(userData.availability.thursday)}
+- Friday: ${formatDay(userData.availability.friday)}
+- Saturday: ${formatDay(userData.availability.saturday)}
+- Sunday: ${formatDay(userData.availability.sunday)}
 
 Generate WEEK ${weekNumber} of ${totalWeeks} now. Return ONLY the JSON object specified in the system instructions.`;
 

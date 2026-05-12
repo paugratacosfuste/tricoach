@@ -89,6 +89,10 @@ const PHYSICAL_ISSUES = [
   { id: 'other', label: 'Other (describe in notes)' },
 ];
 
+// Phase 1.E.3 — server `sanitizePromptInput` truncates at 500. Keep the
+// UI cap in lock-step so the user sees the limit before submission.
+const MAX_FREETEXT_LEN = 500;
+
 // ============================================
 // COMPONENT
 // ============================================
@@ -220,6 +224,8 @@ export function WeekReview({
           </div>
 
           {/* Notes */}
+          {/* Phase 1.E.3 — server `sanitizePromptInput` truncates at 500
+              regardless; cap the textarea so the user sees the limit. */}
           <div>
             <label htmlFor="notes" className="text-sm font-medium mb-2 block">
               Additional notes (optional)
@@ -230,7 +236,17 @@ export function WeekReview({
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               rows={2}
+              maxLength={MAX_FREETEXT_LEN}
             />
+            <p
+              className={`text-xs mt-1 text-right ${
+                notes.length >= MAX_FREETEXT_LEN
+                  ? 'text-red-500'
+                  : 'text-muted-foreground'
+              }`}
+            >
+              {notes.length} / {MAX_FREETEXT_LEN}
+            </p>
           </div>
 
           {/* Next Week Constraints */}
@@ -245,10 +261,22 @@ export function WeekReview({
               value={constraints}
               onChange={(e) => setConstraints(e.target.value)}
               rows={2}
+              maxLength={MAX_FREETEXT_LEN}
             />
-            <p className="text-xs text-muted-foreground mt-1">
-              We'll adapt your next week's plan based on this.
-            </p>
+            <div className="flex items-center justify-between text-xs mt-1">
+              <span className="text-muted-foreground">
+                We'll adapt your next week's plan based on this.
+              </span>
+              <span
+                className={
+                  constraints.length >= MAX_FREETEXT_LEN
+                    ? 'text-red-500'
+                    : 'text-muted-foreground'
+                }
+              >
+                {constraints.length} / {MAX_FREETEXT_LEN}
+              </span>
+            </div>
           </div>
         </div>
 
